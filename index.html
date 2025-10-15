@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>年年英语学习搭档个案研究海报</title>
+<style>
+  /* 基础样式 */
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    background: linear-gradient(to bottom, #89f7fe, #66a6ff);
+    color: #333;
+    line-height: 1.6;
+  }
+
+  .container {
+    max-width: 600px;
+    margin: 40px auto;
+    padding: 25px 20px;
+    background: rgba(255, 255, 255, 0.97);
+    border-radius: 20px;
+    box-shadow: 0 12px 35px rgba(0,0,0,0.2);
+    animation: fadeIn 1s ease-out;
+  }
+
+  /* 标题 */
+  h1 {
+    text-align: center;
+    font-size: 2em;
+    color: #0d3b66;
+    margin-bottom: 30px;
+    background: linear-gradient(90deg, #f7971e, #ffd200);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: slideDown 0.8s ease-out;
+  }
+
+  h2 {
+    font-size: 1.4em;
+    color: #0d3b66;
+    margin-top: 25px;
+    margin-bottom: 15px;
+    position: relative;
+    padding-bottom: 4px;
+  }
+
+  h2::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 50px;
+    height: 3px;
+    background: #f7971e;
+    border-radius: 2px;
+  }
+
+  /* 列表样式 */
+  ul {
+    list-style-type: none;
+    padding-left: 0;
+  }
+
+  li {
+    background: #f0f4f8;
+    margin-bottom: 10px;
+    padding: 12px 15px;
+    border-radius: 15px;
+    box-shadow: 0 3px 7px rgba(0,0,0,0.08);
+    transition: all 0.25s ease;
+    position: relative;
+    overflow: hidden;
+    animation: fadeInUp 0.8s ease-out;
+    cursor: pointer;
+  }
+
+  li::before {
+    content: '•';
+    color: #f7971e;
+    font-weight: bold;
+    display: inline-block;
+    width: 1em;
+    margin-left: -1em;
+  }
+
+  li:active {
+    background: #ffe5b4;
+    transform: translateY(-2px);
+    box-shadow: 0 5px 10px rgba(0,0,0,0.15);
+  }
+
+  /* 动画效果 */
+  @keyframes fadeIn {
+    from {opacity: 0;}
+    to {opacity: 1;}
+  }
+
+  @keyframes slideDown {
+    from {opacity: 0; transform: translateY(-20px);}
+    to {opacity: 1; transform: translateY(0);}
+  }
+
+  @keyframes fadeInUp {
+    from {opacity: 0; transform: translateY(10px);}
+    to {opacity: 1; transform: translateY(0);}
+  }
+
+  /* 响应式优化 */
+  @media (max-width: 480px) {
+    .container {
+      margin: 20px 10px;
+      padding: 20px 15px;
+    }
+    h1 {
+      font-size: 1.8em;
+    }
+    h2 {
+      font-size: 1.3em;
+    }
+    li {
+      padding: 10px 12px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>《关于年年英语学习搭档交互模式的个案研究》</h1>
+
+  <h2>参与者要求（任职式）</h2>
+  <ul>
+    <li>本科及以上学历</li>
+    <li>英语水平达到 CET-6 及以上，具备基础口语交流能力</li>
+    <li>有系统的英语学习经历，最好有参与英语学习搭档或小组经验</li>
+    <li>年龄在 18 至 35 岁之间，具备良好的学习习惯和自我管理能力</li>
+    <li>学习能力强，愿意配合研究安排，能够提供真实、完整的学习互动信息</li>
+    <li>具备良好的沟通能力和表达能力，能参与问卷、访谈或观察活动</li>
+    <li>能按时完成研究任务，配合约 2~4 周的观察或学习记录</li>
+    <li>无严重语言障碍或沟通障碍</li>
+    <li>对英语学习和搭档式学习模式有兴趣，并具备积极参与态度</li>
+    <li>能够使用在线工具（如 Zoom、Teams、Slack、Telegram 等）进行远程互动与学习记录</li>
+    <li>能够按要求完成学习日志、录音、视频或其他研究材料的提交</li>
+    <li>愿意签署知情同意书并配合数据隐私保护规定</li>
+    <li>工作方式：remote</li>
+  </ul>
+
+  <h2>加分项</h2>
+  <ul>
+    <li>能流畅阅读计算机领域英文论文，如《Attention Is All You Need》《ImageNet Classification with Deep Convolutional Neural Networks》《A Manifesto for Future Generation Cloud Computing》《A Survey on Mobile Edge Computing》</li>
+    <li>在 Stack Overflow 发表过文章（纯英文）且阅读量 10 万以上</li>
+    <li>在 ISCA、ASPLOS、OSDI、SOSP 等国际顶级会议发表过论文</li>
+    <li>在 ACM Digital Library、IEEE Xplore、arXiv 发表过期刊论文</li>
+    <li>有跨学科研究背景，能够理解并参与技术与语言学习结合的研究</li>
+    <li>具备良好的自学能力和实验设计能力，能独立或协作完成观察记录和数据分析</li>
+    <li>对教育技术、学习科学或计算机科学有一定理解和兴趣</li>
+    <li>能适应远程协作和灵活的时间安排</li>
+    <li>有团队协作经验或参与过研究项目者优先</li>
+  </ul>
+</div>
+
+</body>
+</html>
