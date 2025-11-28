@@ -1,4 +1,4 @@
-import { createContext } from 'react';
+import { createContext, Dispatch, SetStateAction } from 'react';
 
 export type AppState = 'CHAOS' | 'FORMED';
 
@@ -28,6 +28,10 @@ export interface TreeContextType {
 
   selectedPhotoUrl: string | null; // 当前选中的照片
   setSelectedPhotoUrl: (url: string | null) => void;
+
+  // 新增：五指平移偏移量
+  panOffset: { x: number, y: number };
+  setPanOffset: Dispatch<SetStateAction<{ x: number, y: number }>>;
 }
 
 export interface ParticleData {

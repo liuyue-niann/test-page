@@ -1,6 +1,6 @@
 
 import React, { useRef, useMemo, useContext, useState, useEffect } from 'react';
-import { useFrame, extend, useThree } from '@react-three/fiber';
+import { useFrame, extend, useThree, Object3DNode } from '@react-three/fiber';
 import * as THREE from 'three';
 import { shaderMaterial, useTexture } from '@react-three/drei';
 import * as random from 'maath/random/dist/maath-random.esm';
@@ -9,20 +9,16 @@ import { TreeContext, ParticleData, TreeContextType } from '../types';
 // ... (FoliageMaterial shader 代码保持不变) ...
 const FoliageMaterial = shaderMaterial(
   { uTime: 0, uColor: new THREE.Color('#004225'), uColorAccent: new THREE.Color('#00fa9a'), uPixelRatio: 1 },
-  ` uniform float uTime; uniform float uPixelRatio; attribute float size; varying vec3 vPosition; varying float vBlink; vec3 curl(float x, float y, float z) { float eps=1.,n1,n2,a,b;x/=eps;y/=eps;z/=eps;vec3 curl=vec3(0.);n1=sin(y+cos(z+uTime));n2=cos(x+sin(z+uTime));curl.x=n1-n2;n1=sin(z+cos(x+uTime));n2=cos(y+sin(x+uTime));curl.y=n1-n2;n1=sin(x+cos(y+uTime));n2=cos(z+sin(y+uTime));curl.z=n1-n2;return curl*0.1; } void main() { vPosition=position; vec3 distortedPosition=position+curl(position.x,position.y,position.z); vec4 mvPosition=modelViewMatrix*vec4(distortedPosition,1.0); gl_Position=projectionMatrix*mvPosition; gl_PointSize=size*uPixelRatio*(60.0/-mvPosition.z); vBlink=sin(uTime*2.0+position.y*5.0+position.x); } `,
+  ` uniform float uTime; uniform float uPixelRatio; attribute float size; varying vec3 vPosition; varying float vBlink; vec3 curl(float x, float y, float z) { float eps=1.,n1,n2,a,b;x/=eps;y/=eps;z/=eps;vec3 curl=vec3(0.);n1=sin(y+cos(z+uTime));n2=cos(x+sin(z+uTime));curl.x=n1-n2;n1=sin(z+cos(x+uTime));n2=cos(y+sin(x+uTime));curl.z=n1-n2;n1=sin(x+cos(y+uTime));n2=cos(z+sin(y+uTime));curl.z=n1-n2;return curl*0.1; } void main() { vPosition=position; vec3 distortedPosition=position+curl(position.x,position.y,position.z); vec4 mvPosition=modelViewMatrix*vec4(distortedPosition,1.0); gl_Position=projectionMatrix*mvPosition; gl_PointSize=size*uPixelRatio*(60.0/-mvPosition.z); vBlink=sin(uTime*2.0+position.y*5.0+position.x); } `,
   ` uniform vec3 uColor; uniform vec3 uColorAccent; varying float vBlink; void main() { vec2 xy=gl_PointCoord.xy-vec2(0.5); float ll=length(xy); if(ll>0.5) discard; float strength=pow(1.0-ll*2.0,3.0); vec3 color=mix(uColor,uColorAccent,smoothstep(-0.8,0.8,vBlink)); gl_FragColor=vec4(color,strength); } `
 );
 extend({ FoliageMaterial });
 
-// Fix JSX type
 declare module '@react-three/fiber' {
   interface ThreeElements {
-    foliageMaterial: any;
+    foliageMaterial: Object3DNode<THREE.ShaderMaterial, typeof FoliageMaterial>
   }
 }
-
-// Fix JSX type
-declare global { namespace JSX { interface IntrinsicElements { foliageMaterial: any; } } }
 
 // --- Photo Component ---
 const PolaroidPhoto: React.FC<{ url: string; position: THREE.Vector3; rotation: THREE.Euler; scale: number; id: string; }> = ({ url, position, rotation, scale, id }) => {
@@ -45,21 +41,23 @@ const PolaroidPhoto: React.FC<{ url: string; position: THREE.Vector3; rotation: 
 
 // --- Main Tree System ---
 const TreeSystem: React.FC = () => {
-  const { state, rotationSpeed, pointer, clickTrigger, setSelectedPhotoUrl, selectedPhotoUrl } = useContext(TreeContext) as TreeContextType;
+  const { state, rotationSpeed, pointer, clickTrigger, setSelectedPhotoUrl, selectedPhotoUrl, panOffset } = useContext(TreeContext) as TreeContextType;
   const { camera, raycaster } = useThree();
   const pointsRef = useRef<THREE.Points>(null);
   const lightsRef = useRef<THREE.InstancedMesh>(null);
   const trunkRef = useRef<THREE.Mesh>(null);
+  const groupRef = useRef<THREE.Group>(null);
   
   const progress = useRef(0);
   const treeRotation = useRef(0);
   
-  const photoMeshesRef = useRef<THREE.Group[]>([]);
+  // 用于平滑过渡 Pan
+  const currentPan = useRef({ x: 0, y: 0 });
+  
   const [photoObjects, setPhotoObjects] = useState<{ id: string; url: string; ref: React.MutableRefObject<THREE.Group | null>; data: ParticleData; pos: THREE.Vector3; rot: THREE.Euler; scale: number; }[]>([]);
 
   // --- Data Generation (保持不变) ---
   const { foliageData, photosData, lightsData } = useMemo(() => {
-    // ... 请保留原有的粒子、灯光、照片生成逻辑 ...
     const particleCount = 4500;
     const foliage = new Float32Array(particleCount*3); const foliageChaos=new Float32Array(particleCount*3); const foliageTree=new Float32Array(particleCount*3); const sizes=new Float32Array(particleCount);
     const sphere = random.inSphere(new Float32Array(particleCount*3),{radius:18}); for(let i=0;i<particleCount*3;i++) foliageChaos[i]=sphere[i];
@@ -84,32 +82,22 @@ const TreeSystem: React.FC = () => {
     setPhotoObjects(photosData.map(p => ({ id: p.id, url: p.image!, ref: React.createRef(), data: p, pos: new THREE.Vector3(), rot: new THREE.Euler(), scale: p.scale })));
   }, [photosData]);
 
-  // --- 处理点击事件 (Raycasting) ---
-  // 当 clickTrigger 更新时触发检测
+  // --- 处理点击事件 ---
   useEffect(() => {
-    // 关键修复：如果 selectedPhotoUrl 有值（说明弹窗已打开），则不进行 3D 射线检测
-    // 防止用户在关闭弹窗时误触背后的 3D 对象
     if (state === 'CHAOS' && pointer && !selectedPhotoUrl) {
         const x = pointer.x * 2 - 1;
         const y = -(pointer.y * 2) + 1;
         raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
-        
         const targets = photoObjects.map(obj => obj.ref.current).filter((group): group is THREE.Group => group !== null);
         const intersects = raycaster.intersectObjects(targets, true);
-
         if (intersects.length > 0) {
             const hit = intersects[0];
             let currentObj: THREE.Object3D | null = hit.object;
-            while(currentObj && !currentObj.userData.photoUrl) {
-                currentObj = currentObj.parent;
-            }
-            if (currentObj && currentObj.userData.photoUrl) {
-                console.log("Photo Hit:", currentObj.userData.photoUrl);
-                setSelectedPhotoUrl(currentObj.userData.photoUrl);
-            }
+            while(currentObj && !currentObj.userData.photoUrl) currentObj = currentObj.parent;
+            if (currentObj && currentObj.userData.photoUrl) setSelectedPhotoUrl(currentObj.userData.photoUrl);
         }
     }
-  }, [clickTrigger, selectedPhotoUrl]); // 增加 selectedPhotoUrl 依赖
+  }, [clickTrigger, selectedPhotoUrl]);
 
   // --- Animation Loop ---
   useFrame((state3d, delta) => {
@@ -117,8 +105,22 @@ const TreeSystem: React.FC = () => {
     progress.current = THREE.MathUtils.damp(progress.current, targetProgress, 2.0, delta);
     const ease = progress.current * progress.current * (3 - 2 * progress.current);
     treeRotation.current += (state === 'FORMED' ? rotationSpeed : 0.05) * delta;
+    
+    // 应用平移 (带阻尼)
+    // 关键修复：当 FORMED 时，忽略 panOffset，强制目标为 (0,0)
+    const targetPanX = state === 'FORMED' ? 0 : panOffset.x;
+    const targetPanY = state === 'FORMED' ? 0 : panOffset.y;
 
-    // ... Update Logic (Particles, Lights, Photos) - Same as before ...
+    currentPan.current.x = THREE.MathUtils.lerp(currentPan.current.x, targetPanX, 0.1);
+    currentPan.current.y = THREE.MathUtils.lerp(currentPan.current.y, targetPanY, 0.1);
+    
+    if (groupRef.current) {
+        groupRef.current.position.x = currentPan.current.x;
+        groupRef.current.position.y = currentPan.current.y;
+    }
+
+    // ... Update Logic (Particles, Lights, Photos) ...
+    // (逻辑保持不变，省略以节省空间，但代码功能需完整)
     if (pointsRef.current) {
         // @ts-ignore
         pointsRef.current.material.uniforms.uTime.value = state3d.clock.getElapsedTime();
@@ -162,7 +164,7 @@ const TreeSystem: React.FC = () => {
   });
 
   return (
-    <group>
+    <group ref={groupRef}>
       <mesh ref={trunkRef} position={[0, 0, 0]}><cylinderGeometry args={[0.2, 0.8, 14, 8]} /><meshStandardMaterial color="#3E2723" roughness={0.9} metalness={0.1} /></mesh>
       <points ref={pointsRef}> <bufferGeometry> <bufferAttribute attach="attributes-position" count={foliageData.current.length/3} array={foliageData.current} itemSize={3} /> <bufferAttribute attach="attributes-size" count={foliageData.sizes.length} array={foliageData.sizes} itemSize={1} /> </bufferGeometry> <foliageMaterial transparent depthWrite={false} blending={THREE.AdditiveBlending} /> </points>
       <instancedMesh ref={lightsRef} args={[undefined, undefined, lightsData.count]}><sphereGeometry args={[0.05, 8, 8]} /><meshStandardMaterial color="#ffddaa" emissive="#ffbb00" emissiveIntensity={3} toneMapped={false} /></instancedMesh>
