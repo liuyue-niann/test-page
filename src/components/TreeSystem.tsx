@@ -1,9 +1,9 @@
 
 import React, { useRef, useMemo, useContext, useState, useEffect } from 'react';
-import { useFrame, extend } from '@react-three/fiber';
+import { useFrame, extend, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { shaderMaterial, useTexture } from '@react-three/drei';
-import * as maath from 'maath/random/dist/maath-random.esm';
+import { shaderMaterial } from '@react-three/drei';
+import * as random from 'maath/random/dist/maath-random.esm';
 import { TreeContext, ParticleData, TreeContextType } from '../types';
 
 // --- Custom Shaders ---
@@ -25,27 +25,27 @@ const FoliageMaterial = shaderMaterial(
     varying float vDistance;
 
     // Curl noise function (Simplex-like)
-    vec3 curl(float x, float y, float z) {
+    vec3 calcCurl(float x, float y, float z) {
         float eps = 1., n1, n2, a, b;
         x /= eps; y /= eps; z /= eps;
-        vec3 curl = vec3(0.);
+        vec3 v = vec3(0.);
         n1 = sin(y + cos(z + uTime));
         n2 = cos(x + sin(z + uTime));
-        curl.x = n1 - n2;
+        v.x = n1 - n2;
         n1 = sin(z + cos(x + uTime));
         n2 = cos(y + sin(x + uTime));
-        curl.y = n1 - n2;
+        v.y = n1 - n2;
         n1 = sin(x + cos(y + uTime));
         n2 = cos(z + sin(y + uTime));
-        curl.z = n1 - n2;
-        return curl * 0.15;
+        v.z = n1 - n2;
+        return v * 0.15;
     }
 
     void main() {
       vPosition = position;
       
       // Add curl noise for organic movement
-      vec3 distortedPosition = position + curl(position.x, position.y, position.z);
+      vec3 distortedPosition = position + calcCurl(position.x, position.y, position.z);
       
       vec4 mvPosition = modelViewMatrix * vec4(distortedPosition, 1.0);
       gl_Position = projectionMatrix * mvPosition;
@@ -113,7 +113,7 @@ const PolaroidPhoto: React.FC<{
   }, [url]);
 
   return (
-    <group position={position} rotation={rotation} scale={scale}>
+    <group position={position} rotation={rotation} scale={scale} userData={{ url }}>
       {/* Photo Frame (Back/Border) */}
       <mesh position={[0, 0, 0]} castShadow>
         <boxGeometry args={[1, 1.25, 0.02]} />
@@ -152,7 +152,16 @@ const PolaroidPhoto: React.FC<{
 // --- Main Tree System ---
 
 const TreeSystem: React.FC = () => {
-  const { state, rotationSpeed } = useContext(TreeContext) as TreeContextType;
+  // 获取上下文，包含隔空触控状态
+  const { 
+    state, 
+    rotationSpeed, 
+    pointer, 
+    isPinching, 
+    setSelectedPhotoUrl 
+  } = useContext(TreeContext) as TreeContextType;
+  
+  const { camera, raycaster } = useThree(); // 获取相机和射线
   const pointsRef = useRef<THREE.Points>(null);
   const lightsRef = useRef<THREE.InstancedMesh>(null);
   const trunkRef = useRef<THREE.Mesh>(null);
@@ -160,6 +169,7 @@ const TreeSystem: React.FC = () => {
   // Transition Progress: 0 = Chaos, 1 = Formed
   const progress = useRef(0);
   const treeRotation = useRef(0);
+  const pinchDebounceRef = useRef<number>(0);
   
   // We manage Photo positions manually in the useFrame loop
   const [photoObjects, setPhotoObjects] = useState<{
@@ -181,7 +191,7 @@ const TreeSystem: React.FC = () => {
     const foliageTree = new Float32Array(particleCount * 3);
     const sizes = new Float32Array(particleCount);
 
-    const sphere = maath.inSphere(new Float32Array(particleCount * 3), { radius: 18 });
+    const sphere = random.inSphere(new Float32Array(particleCount * 3), { radius: 18 });
     for (let i = 0; i < particleCount * 3; i++) foliageChaos[i] = sphere[i];
 
     for (let i = 0; i < particleCount; i++) {
@@ -201,7 +211,7 @@ const TreeSystem: React.FC = () => {
     const lightCount = 300; // Increased count
     const lightChaos = new Float32Array(lightCount * 3);
     const lightTree = new Float32Array(lightCount * 3);
-    const lSphere = maath.inSphere(new Float32Array(lightCount * 3), { radius: 20 });
+    const lSphere = random.inSphere(new Float32Array(lightCount * 3), { radius: 20 });
     
     for(let i=0; i<lightCount * 3; i++) lightChaos[i] = lSphere[i];
 
@@ -221,35 +231,26 @@ const TreeSystem: React.FC = () => {
     const photoCount = 31;
     const photos: ParticleData[] = [];
     for (let i = 0; i < photoCount; i++) {
-        // 树形态逻辑 (Tree Form) - 保持不变
+        // Tree Form
         const t = i / (photoCount - 1);
         const h = t * 10 - 5; 
         const radius = (6 - (h + 5)) * 0.6 + 1.8; 
         const angle = t * Math.PI * 8; 
         
-        // --- 修改开始：优化散开位置与朝向 ---
-        
-        // 1. 位置优化 (Position): 扩大散开范围，解决紧凑问题
+        // Chaos Form
         const rTheta = Math.random() * Math.PI * 2;
         const rPhi = Math.acos(2 * Math.random() - 1);
         
-        // 修改点：半径从原来的 2-8 扩大到 6-16，让照片散得更开，占据屏幕
         const rRad = 6 + Math.random() * 10; 
 
-        // 计算散开坐标
+        // Calculate Chaos Coords
         const chaosX = rRad * Math.sin(rPhi) * Math.cos(rTheta);
-        // Y轴稍微压缩一点点 (0.9)，避免照片跑得太高或太低超出屏幕
         const chaosY = (rRad * Math.sin(rPhi) * Math.sin(rTheta)) * 0.9; 
         const chaosZ = rRad * Math.cos(rPhi);
 
-        // 2. 旋转优化 (Rotation): 让照片正面朝前，带一点点随机倾斜
-        // 之前是完全随机 (Math.PI)，现在改为 0 附近的微小偏移
-        // (Math.random() - 0.5) * 0.5 大约是 ±15度
         const chaosRotX = (Math.random() - 0.5) * 0.5; 
         const chaosRotY = (Math.random() - 0.5) * 0.5; 
-        const chaosRotZ = (Math.random() - 0.5) * 0.2; // Z轴倾斜稍微小一点，保持水平感
-
-        // --- 修改结束 ---
+        const chaosRotZ = (Math.random() - 0.5) * 0.2;
 
         photos.push({
             id: `photo-${i}`,
@@ -260,10 +261,10 @@ const TreeSystem: React.FC = () => {
                 h,
                 Math.sin(angle) * radius
             ],
-            chaosRot: [chaosRotX, chaosRotY, chaosRotZ], // 应用新的朝向
+            chaosRot: [chaosRotX, chaosRotY, chaosRotZ],
             treeRot: [0, -angle + Math.PI / 2, 0], 
             scale: 0.9 + Math.random() * 0.3,
-            image: `https://picsum.photos/seed/${i + 55}/400/500`, // 如果你有本地照片，记得这里逻辑是读取 bodyPhotoPaths
+            image: `https://picsum.photos/seed/${i + 55}/400/500`,
             color: 'white'
         });
     }
@@ -298,6 +299,43 @@ const TreeSystem: React.FC = () => {
     // 2. Global Rotation
     const spinFactor = state === 'FORMED' ? rotationSpeed : 0.05;
     treeRotation.current += spinFactor * delta;
+
+    // --- 3D 射线拾取逻辑 (Raycasting) ---
+    // 只有在 CHAOS 模式且检测到捏合时才触发
+    if (state === 'CHAOS' && pointer && isPinching) {
+        // 简单的防抖，防止一帧内触发多次
+        if (state3d.clock.elapsedTime - pinchDebounceRef.current > 0.5) {
+            // 将 0-1 的 pointer 坐标转换为 NDC (-1 到 1)
+            const x = pointer.x * 2 - 1;
+            const y = -(pointer.y * 2) + 1; // Y 轴翻转
+            
+            // 设置射线
+            raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
+
+            // 获取所有照片的 Mesh (从 ref 中获取)
+            const targets = photoObjects
+                .map(obj => obj.ref.current)
+                .filter((group): group is THREE.Group => group !== null);
+
+            // 检测交叉
+            const intersects = raycaster.intersectObjects(targets, true); // true = 递归检测子对象
+
+            if (intersects.length > 0) {
+                // 找到最近的一个交叉点
+                const hit = intersects[0];
+                // 向上遍历直到找到包含 url 信息的 Group
+                let currentObj: THREE.Object3D | null = hit.object;
+                while(currentObj) {
+                    if (currentObj.userData && currentObj.userData.url) {
+                        setSelectedPhotoUrl(currentObj.userData.url);
+                        pinchDebounceRef.current = state3d.clock.elapsedTime; // 记录时间防止连击
+                        break;
+                    }
+                    currentObj = currentObj.parent;
+                }
+            }
+        }
+    }
 
     // 3. Update Foliage Points
     if (pointsRef.current) {

@@ -1,20 +1,21 @@
+
 import React, { useContext, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { TreeContext } from '../types';
+import { TreeContext, TreeContextType } from '../types';
 
 const CrystalOrnaments: React.FC = () => {
-  const { state, rotationSpeed } = useContext(TreeContext);
+  const { state, rotationSpeed } = useContext(TreeContext) as TreeContextType;
   const groupRef = useRef<THREE.Group>(null);
   
   const progress = useRef(0);
   const treeRotation = useRef(0);
 
   const ornaments = useMemo(() => {
-    const count = 60; // 稍微再多加几个装饰品，让颜色更丰富
+    const count = 60; // Slightly more ornaments
     const items = [];
     
-    // 定义颜色池：圣诞红、金、圣诞绿
+    // Christmas colors: Red, Gold, Green
     const colors = ['#D32F2F', '#FFD700', '#2E7D32'];
 
     for (let i = 0; i < count; i++) {
@@ -24,7 +25,7 @@ const CrystalOrnaments: React.FC = () => {
         const r = (6 - (h + 5.5)) * 0.5 + 0.5;
         const angle = t * Math.PI * 13;
         
-        // Chaos Form Data (保持在照片外圈)
+        // Chaos Form Data (Outside photos)
         const radius = 10 + Math.random() * 12;
         const theta = Math.random() * Math.PI * 2;
         const phi = Math.acos(2 * Math.random() - 1);
@@ -38,8 +39,7 @@ const CrystalOrnaments: React.FC = () => {
         // Type
         const type = Math.random() > 0.5 ? 'sphere' : 'box';
         
-        // --- 修改重点：添加绿色 ---
-        // 随机从颜色池中取一个颜色
+        // Random color
         const color = colors[Math.floor(Math.random() * colors.length)];
 
         items.push({
@@ -114,13 +114,12 @@ const CrystalOrnaments: React.FC = () => {
           {o.type === 'sphere' && <sphereGeometry args={[1, 32, 32]} />}
           {o.type === 'box' && <boxGeometry args={[1, 1, 1]} />}
           
-          {/* 关键修改：材质参数调整 */}
           <meshStandardMaterial 
             color={o.color} 
             roughness={0.2}
-            metalness={0.5}        /* 降低金属感：从 0.8 降到 0.5，减少变黑的情况 */
+            metalness={0.5}
             emissive={o.color}
-            emissiveIntensity={0.8} /* 提高自发光：从 0.4 升到 0.8，确保在黑背景下发亮 */
+            emissiveIntensity={0.8}
           />
         </mesh>
       ))}
