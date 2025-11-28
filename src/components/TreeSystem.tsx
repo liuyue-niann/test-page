@@ -1,3 +1,4 @@
+
 import React, { useRef, useMemo, useContext, useState, useEffect } from 'react';
 import { useFrame, extend, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -5,7 +6,7 @@ import { shaderMaterial, useTexture } from '@react-three/drei';
 import * as random from 'maath/random/dist/maath-random.esm';
 import { TreeContext, ParticleData, TreeContextType } from '../types';
 
-// ... (FoliageMaterial shader 代码完全保持不变，复制你原来文件里的即可) ...
+// ... (FoliageMaterial shader 代码保持不变) ...
 const FoliageMaterial = shaderMaterial(
   { uTime: 0, uColor: new THREE.Color('#004225'), uColorAccent: new THREE.Color('#00fa9a'), uPixelRatio: 1 },
   ` uniform float uTime; uniform float uPixelRatio; attribute float size; varying vec3 vPosition; varying float vBlink; vec3 curl(float x, float y, float z) { float eps=1.,n1,n2,a,b;x/=eps;y/=eps;z/=eps;vec3 curl=vec3(0.);n1=sin(y+cos(z+uTime));n2=cos(x+sin(z+uTime));curl.x=n1-n2;n1=sin(z+cos(x+uTime));n2=cos(y+sin(x+uTime));curl.y=n1-n2;n1=sin(x+cos(y+uTime));n2=cos(z+sin(y+uTime));curl.z=n1-n2;return curl*0.1; } void main() { vPosition=position; vec3 distortedPosition=position+curl(position.x,position.y,position.z); vec4 mvPosition=modelViewMatrix*vec4(distortedPosition,1.0); gl_Position=projectionMatrix*mvPosition; gl_PointSize=size*uPixelRatio*(60.0/-mvPosition.z); vBlink=sin(uTime*2.0+position.y*5.0+position.x); } `,
@@ -13,26 +14,23 @@ const FoliageMaterial = shaderMaterial(
 );
 extend({ FoliageMaterial });
 
-// Fix for: Property 'foliageMaterial' does not exist on type 'JSX.IntrinsicElements'
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      foliageMaterial: any;
-    }
+// Fix JSX type
+declare module '@react-three/fiber' {
+  interface ThreeElements {
+    foliageMaterial: any;
   }
 }
 
+// Fix JSX type
+declare global { namespace JSX { interface IntrinsicElements { foliageMaterial: any; } } }
+
 // --- Photo Component ---
-const PolaroidPhoto: React.FC<{ 
-  url: string; position: THREE.Vector3; rotation: THREE.Euler; scale: number; id: string;
-}> = ({ url, position, rotation, scale, id }) => {
+const PolaroidPhoto: React.FC<{ url: string; position: THREE.Vector3; rotation: THREE.Euler; scale: number; id: string; }> = ({ url, position, rotation, scale, id }) => {
   const texture = useTexture(url);
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
-
   return (
     <group position={position} rotation={rotation} scale={scale}>
-      {/* userData 存储关键信息 */}
       <mesh position={[0, 0, 0]} userData={{ photoId: id, photoUrl: url }}>
         <boxGeometry args={[1, 1.25, 0.02]} />
         <meshStandardMaterial color="#f0f0f0" roughness={0.2} metalness={0.5} />
@@ -47,24 +45,21 @@ const PolaroidPhoto: React.FC<{
 
 // --- Main Tree System ---
 const TreeSystem: React.FC = () => {
-  const { state, rotationSpeed, pointer, setSelectedPhotoUrl, setHoverProgress } = useContext(TreeContext) as TreeContextType;
+  const { state, rotationSpeed, pointer, clickTrigger, setSelectedPhotoUrl, selectedPhotoUrl } = useContext(TreeContext) as TreeContextType;
   const { camera, raycaster } = useThree();
   const pointsRef = useRef<THREE.Points>(null);
-  const progress = useRef(0);
-  const treeRotation = useRef(0);
   const lightsRef = useRef<THREE.InstancedMesh>(null);
   const trunkRef = useRef<THREE.Mesh>(null);
   
-  // 悬停逻辑状态
-  const hoverState = useRef<{ id: string | null; timer: number }>({ id: null, timer: 0 });
+  const progress = useRef(0);
+  const treeRotation = useRef(0);
+  
   const photoMeshesRef = useRef<THREE.Group[]>([]);
-  const [photoObjects, setPhotoObjects] = useState<{
-    id: string; url: string; ref: React.MutableRefObject<THREE.Group | null>; data: ParticleData; pos: THREE.Vector3; rot: THREE.Euler; scale: number;
-  }[]>([]);
+  const [photoObjects, setPhotoObjects] = useState<{ id: string; url: string; ref: React.MutableRefObject<THREE.Group | null>; data: ParticleData; pos: THREE.Vector3; rot: THREE.Euler; scale: number; }[]>([]);
 
   // --- Data Generation (保持不变) ---
   const { foliageData, photosData, lightsData } = useMemo(() => {
-    // ... 简写: 请保留原来的粒子、灯光、照片生成逻辑 ...
+    // ... 请保留原有的粒子、灯光、照片生成逻辑 ...
     const particleCount = 4500;
     const foliage = new Float32Array(particleCount*3); const foliageChaos=new Float32Array(particleCount*3); const foliageTree=new Float32Array(particleCount*3); const sizes=new Float32Array(particleCount);
     const sphere = random.inSphere(new Float32Array(particleCount*3),{radius:18}); for(let i=0;i<particleCount*3;i++) foliageChaos[i]=sphere[i];
@@ -89,19 +84,12 @@ const TreeSystem: React.FC = () => {
     setPhotoObjects(photosData.map(p => ({ id: p.id, url: p.image!, ref: React.createRef(), data: p, pos: new THREE.Vector3(), rot: new THREE.Euler(), scale: p.scale })));
   }, [photosData]);
 
-  // --- Animation Loop ---
-  useFrame((state3d, delta) => {
-    // 基础动画 (保持不变)
-    const targetProgress = state === 'FORMED' ? 1 : 0;
-    progress.current = THREE.MathUtils.damp(progress.current, targetProgress, 2.0, delta);
-    const p = progress.current;
-    const ease = p * p * (3 - 2 * p);
-    const spinFactor = state === 'FORMED' ? rotationSpeed : 0.05;
-    treeRotation.current += spinFactor * delta;
-
-    // --- 悬停点击逻辑 (Hover to Click) ---
-    // 1. 只有 CHAOS 模式且有光标时才检测
-    if (state === 'CHAOS' && pointer) {
+  // --- 处理点击事件 (Raycasting) ---
+  // 当 clickTrigger 更新时触发检测
+  useEffect(() => {
+    // 关键修复：如果 selectedPhotoUrl 有值（说明弹窗已打开），则不进行 3D 射线检测
+    // 防止用户在关闭弹窗时误触背后的 3D 对象
+    if (state === 'CHAOS' && pointer && !selectedPhotoUrl) {
         const x = pointer.x * 2 - 1;
         const y = -(pointer.y * 2) + 1;
         raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
@@ -112,46 +100,25 @@ const TreeSystem: React.FC = () => {
         if (intersects.length > 0) {
             const hit = intersects[0];
             let currentObj: THREE.Object3D | null = hit.object;
-            // 找到包含 ID 的父对象
-            while(currentObj && !currentObj.userData.photoId) {
+            while(currentObj && !currentObj.userData.photoUrl) {
                 currentObj = currentObj.parent;
             }
-
-            if (currentObj) {
-                const hitId = currentObj.userData.photoId;
-                
-                // 如果指着同一个物体
-                if (hoverState.current.id === hitId) {
-                    hoverState.current.timer += delta;
-                    // 计算进度 (1.0秒为阈值)
-                    const DWELL_TIME = 1.0; 
-                    const prog = Math.min(hoverState.current.timer / DWELL_TIME, 1);
-                    setHoverProgress(prog);
-
-                    if (hoverState.current.timer > DWELL_TIME) {
-                        setSelectedPhotoUrl(currentObj.userData.photoUrl);
-                        // 触发后重置，防止连击
-                        hoverState.current = { id: null, timer: 0 };
-                        setHoverProgress(0);
-                    }
-                } else {
-                    // 指向了新物体，重置计时器
-                    hoverState.current = { id: hitId, timer: 0 };
-                    setHoverProgress(0);
-                }
+            if (currentObj && currentObj.userData.photoUrl) {
+                console.log("Photo Hit:", currentObj.userData.photoUrl);
+                setSelectedPhotoUrl(currentObj.userData.photoUrl);
             }
-        } else {
-            // 没指到任何东西
-            hoverState.current = { id: null, timer: 0 };
-            setHoverProgress(0);
         }
-    } else {
-        // 没有光标
-        hoverState.current = { id: null, timer: 0 };
-        setHoverProgress(0);
     }
+  }, [clickTrigger, selectedPhotoUrl]); // 增加 selectedPhotoUrl 依赖
 
-    // --- Update Particles & Photos (Visual Logic - 保持不变) ---
+  // --- Animation Loop ---
+  useFrame((state3d, delta) => {
+    const targetProgress = state === 'FORMED' ? 1 : 0;
+    progress.current = THREE.MathUtils.damp(progress.current, targetProgress, 2.0, delta);
+    const ease = progress.current * progress.current * (3 - 2 * progress.current);
+    treeRotation.current += (state === 'FORMED' ? rotationSpeed : 0.05) * delta;
+
+    // ... Update Logic (Particles, Lights, Photos) - Same as before ...
     if (pointsRef.current) {
         // @ts-ignore
         pointsRef.current.material.uniforms.uTime.value = state3d.clock.getElapsedTime();
@@ -199,7 +166,11 @@ const TreeSystem: React.FC = () => {
       <mesh ref={trunkRef} position={[0, 0, 0]}><cylinderGeometry args={[0.2, 0.8, 14, 8]} /><meshStandardMaterial color="#3E2723" roughness={0.9} metalness={0.1} /></mesh>
       <points ref={pointsRef}> <bufferGeometry> <bufferAttribute attach="attributes-position" count={foliageData.current.length/3} array={foliageData.current} itemSize={3} /> <bufferAttribute attach="attributes-size" count={foliageData.sizes.length} array={foliageData.sizes} itemSize={1} /> </bufferGeometry> <foliageMaterial transparent depthWrite={false} blending={THREE.AdditiveBlending} /> </points>
       <instancedMesh ref={lightsRef} args={[undefined, undefined, lightsData.count]}><sphereGeometry args={[0.05, 8, 8]} /><meshStandardMaterial color="#ffddaa" emissive="#ffbb00" emissiveIntensity={3} toneMapped={false} /></instancedMesh>
-      {photoObjects.map((obj, index) => ( <group key={obj.id} ref={(el) => { obj.ref.current = el; if (el) photoMeshesRef.current[index] = el; }}> <PolaroidPhoto url={obj.url} position={new THREE.Vector3(0,0,0)} rotation={new THREE.Euler(0,0,0)} scale={obj.scale} id={obj.id} /> </group> ))}
+      {photoObjects.map((obj, index) => ( 
+        <group key={obj.id} ref={(el) => { obj.ref.current = el; }}>
+             <PolaroidPhoto url={obj.url} position={obj.pos} rotation={obj.rot} scale={obj.scale} id={obj.id} />
+        </group> 
+      ))}
     </group>
   );
 };
