@@ -1,3 +1,5 @@
+import { createContext } from 'react';
+
 export type AppState = 'CHAOS' | 'FORMED';
 
 export interface TreeContextType {
@@ -20,3 +22,5 @@ export interface ParticleData {
   image?: string;
   type: 'LEAF' | 'ORNAMENT' | 'PHOTO';
 }
+
+export const TreeContext = createContext<TreeContextType>({} as TreeContextType);

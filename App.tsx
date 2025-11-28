@@ -1,11 +1,8 @@
 import React, { useState, Suspense } from 'react';
-import { TreeContextType, AppState } from './types';
+import { TreeContextType, AppState, TreeContext } from './types';
 import Experience from './components/Experience';
 import GestureInput from './components/GestureInput';
 import { AnimatePresence, motion } from 'framer-motion';
-
-// Context
-export const TreeContext = React.createContext<TreeContextType>({} as TreeContextType);
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>('CHAOS');

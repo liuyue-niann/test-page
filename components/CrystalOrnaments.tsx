@@ -2,7 +2,7 @@ import React, { useContext, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { MeshTransmissionMaterial } from '@react-three/drei';
 import * as THREE from 'three';
-import { TreeContext } from '../App';
+import { TreeContext } from '../types';
 
 const CrystalOrnaments: React.FC = () => {
   const { state, rotationSpeed } = useContext(TreeContext);

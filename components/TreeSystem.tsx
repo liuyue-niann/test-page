@@ -3,7 +3,7 @@ import { useFrame, extend } from '@react-three/fiber';
 import * as THREE from 'three';
 import { shaderMaterial, useTexture } from '@react-three/drei';
 import * as maath from 'maath/random/dist/maath-random.esm';
-import { TreeContext } from '../App';
+import { TreeContext } from '../types';
 import { ParticleData } from '../types';
 
 // --- Custom Shaders ---

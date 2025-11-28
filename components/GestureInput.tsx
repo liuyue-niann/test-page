@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useContext, useState } from 'react';
 import { FilesetResolver, GestureRecognizer } from '@mediapipe/tasks-vision';
-import { TreeContext } from '../App';
+import { TreeContext } from '../types';
 
 const GestureInput: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const { setState, setRotationSpeed } = useContext(TreeContext);
   const [loading, setLoading] = useState(true);
   const recognizerRef = useRef<GestureRecognizer | null>(null);
-  const requestRef = useRef<number>();
+  const requestRef = useRef<number | null>(null);
   const lastVideoTime = useRef<number>(-1);
 
   useEffect(() => {
@@ -58,7 +58,7 @@ const GestureInput: React.FC = () => {
 
     return () => {
       mounted = false;
-      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+      if (requestRef.current !== null) cancelAnimationFrame(requestRef.current);
       if (videoRef.current && videoRef.current.srcObject) {
         const stream = videoRef.current.srcObject as MediaStream;
         stream.getTracks().forEach(track => track.stop());
