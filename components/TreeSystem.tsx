@@ -1,10 +1,10 @@
+
 import React, { useRef, useMemo, useContext, useState, useEffect } from 'react';
 import { useFrame, extend } from '@react-three/fiber';
 import * as THREE from 'three';
 import { shaderMaterial, useTexture } from '@react-three/drei';
 import * as maath from 'maath/random/dist/maath-random.esm';
-import { TreeContext } from '../types';
-import { ParticleData } from '../types';
+import { TreeContext, ParticleData, TreeContextType } from '../types';
 
 // --- Custom Shaders ---
 
@@ -38,7 +38,7 @@ const FoliageMaterial = shaderMaterial(
         n1 = sin(x + cos(y + uTime));
         n2 = cos(z + sin(y + uTime));
         curl.z = n1 - n2;
-        return curl * 0.1;
+        return curl * 0.15;
     }
 
     void main() {
@@ -51,10 +51,10 @@ const FoliageMaterial = shaderMaterial(
       gl_Position = projectionMatrix * mvPosition;
       
       // Size attenuation
-      gl_PointSize = size * uPixelRatio * (60.0 / -mvPosition.z);
+      gl_PointSize = size * uPixelRatio * (50.0 / -mvPosition.z);
       
       // Blink animation
-      vBlink = sin(uTime * 2.0 + position.y * 5.0 + position.x);
+      vBlink = sin(uTime * 3.0 + position.y * 2.0 + position.x * 2.0);
       vDistance = -mvPosition.z;
     }
   `,
@@ -70,11 +70,11 @@ const FoliageMaterial = shaderMaterial(
       float ll = length(xy);
       if(ll > 0.5) discard;
       
-      // Soft glow edge
-      float strength = pow(1.0 - ll * 2.0, 3.0);
+      // Sharp core, soft glow
+      float strength = pow(1.0 - ll * 2.0, 4.0);
       
       // Mix colors based on blink
-      vec3 color = mix(uColor, uColorAccent, smoothstep(-0.8, 0.8, vBlink));
+      vec3 color = mix(uColor, uColorAccent, smoothstep(-0.5, 1.0, vBlink));
       
       gl_FragColor = vec4(color, strength);
     }
@@ -91,32 +91,58 @@ const PolaroidPhoto: React.FC<{
   scale: number;
   opacity?: number;
 }> = ({ url, position, rotation, scale, opacity = 1 }) => {
-  const texture = useTexture(url);
-  texture.wrapS = THREE.ClampToEdgeWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
+  const [texture, setTexture] = useState<THREE.Texture | null>(null);
+
+  useEffect(() => {
+    const loader = new THREE.TextureLoader();
+    loader.setCrossOrigin('Anonymous');
+    loader.load(
+      url,
+      (tex) => {
+        tex.wrapS = THREE.ClampToEdgeWrapping;
+        tex.wrapT = THREE.ClampToEdgeWrapping;
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.anisotropy = 16;
+        setTexture(tex);
+      },
+      undefined,
+      (err) => {
+        console.warn(`Failed to load texture: ${url}`);
+      }
+    );
+  }, [url]);
 
   return (
     <group position={position} rotation={rotation} scale={scale}>
       {/* Photo Frame (Back/Border) */}
-      <mesh position={[0, 0, 0]}>
+      <mesh position={[0, 0, 0]} castShadow>
         <boxGeometry args={[1, 1.25, 0.02]} />
         <meshStandardMaterial 
-          color="#f0f0f0" 
-          roughness={0.2} 
-          metalness={0.5} 
-          envMapIntensity={2} 
+          color="#f5f5f5" 
+          roughness={0.4} 
+          metalness={0.1} 
         />
       </mesh>
       
       {/* The Image */}
       <mesh position={[0, 0.15, 0.015]}>
         <planeGeometry args={[0.9, 0.9]} />
-        <meshPhysicalMaterial 
-          map={texture} 
-          roughness={0.2} 
-          clearcoat={1.0} 
-          clearcoatRoughness={0.1}
+        <meshBasicMaterial 
+          map={texture}
+          color={texture ? 'white' : '#e0e0e0'}
           toneMapped={false}
+        />
+      </mesh>
+      
+      {/* Glossy Coating */}
+      <mesh position={[0, 0.15, 0.016]}>
+        <planeGeometry args={[0.9, 0.9]} />
+        <meshPhysicalMaterial 
+          transparent 
+          opacity={0.1} 
+          roughness={0.1} 
+          metalness={0.5} 
+          color="white"
         />
       </mesh>
     </group>
@@ -126,14 +152,16 @@ const PolaroidPhoto: React.FC<{
 // --- Main Tree System ---
 
 const TreeSystem: React.FC = () => {
-  const { state, rotationSpeed } = useContext(TreeContext);
+  const { state, rotationSpeed } = useContext(TreeContext) as TreeContextType;
   const pointsRef = useRef<THREE.Points>(null);
+  const lightsRef = useRef<THREE.InstancedMesh>(null);
+  const trunkRef = useRef<THREE.Mesh>(null);
   
   // Transition Progress: 0 = Chaos, 1 = Formed
   const progress = useRef(0);
   const treeRotation = useRef(0);
   
-  // We manage Photo positions manually in the useFrame loop for performance/synchronization
+  // We manage Photo positions manually in the useFrame loop
   const [photoObjects, setPhotoObjects] = useState<{
     id: string;
     url: string;
@@ -145,27 +173,23 @@ const TreeSystem: React.FC = () => {
   }[]>([]);
 
   // --- Data Generation ---
-  const { foliageData, photosData } = useMemo(() => {
+  const { foliageData, photosData, lightsData } = useMemo(() => {
     // 1. Generate Foliage Particles
-    const particleCount = 3500;
-    const foliage = new Float32Array(particleCount * 3); // Current Positions
-    const foliageChaos = new Float32Array(particleCount * 3); // Target Chaos
-    const foliageTree = new Float32Array(particleCount * 3); // Target Tree
+    const particleCount = 4500;
+    const foliage = new Float32Array(particleCount * 3); 
+    const foliageChaos = new Float32Array(particleCount * 3);
+    const foliageTree = new Float32Array(particleCount * 3);
     const sizes = new Float32Array(particleCount);
 
-    // Chaos: Sphere distribution
-    const sphere = maath.inSphere(new Float32Array(particleCount * 3), { radius: 15 });
+    const sphere = maath.inSphere(new Float32Array(particleCount * 3), { radius: 18 });
     for (let i = 0; i < particleCount * 3; i++) foliageChaos[i] = sphere[i];
 
-    // Tree: Cone spiral distribution
     for (let i = 0; i < particleCount; i++) {
       const i3 = i * 3;
-      const h = Math.random() * 12; // Height 0 to 12
-      // Cone shape: Radius gets smaller as H gets higher
-      const coneRadius = (12 - h) * 0.45;
-      const angle = h * 2.5 + Math.random() * Math.PI * 2;
+      const h = Math.random() * 14; 
+      const coneRadius = (14 - h) * 0.45;
+      const angle = h * 3.0 + Math.random() * Math.PI * 2;
       
-      // Tree target positions (centered at 0, h-6, 0)
       foliageTree[i3] = Math.cos(angle) * coneRadius; 
       foliageTree[i3 + 1] = h - 6; 
       foliageTree[i3 + 2] = Math.sin(angle) * coneRadius;
@@ -173,20 +197,38 @@ const TreeSystem: React.FC = () => {
       sizes[i] = Math.random() * 1.5 + 0.5;
     }
 
-    // 2. Generate Photo Metadata
+    // 2. Generate Fairy Lights
+    const lightCount = 300; // Increased count
+    const lightChaos = new Float32Array(lightCount * 3);
+    const lightTree = new Float32Array(lightCount * 3);
+    const lSphere = maath.inSphere(new Float32Array(lightCount * 3), { radius: 20 });
+    
+    for(let i=0; i<lightCount * 3; i++) lightChaos[i] = lSphere[i];
+
+    for(let i=0; i<lightCount; i++) {
+      const i3 = i * 3;
+      const t = i / lightCount;
+      const h = t * 13; // 0 to 13
+      const coneRadius = (14 - h) * 0.48; // Slightly wider than foliage
+      const angle = t * Math.PI * 25; // High frequency spiral
+      
+      lightTree[i3] = Math.cos(angle) * coneRadius;
+      lightTree[i3+1] = h - 6;
+      lightTree[i3+2] = Math.sin(angle) * coneRadius;
+    }
+
+    // 3. Generate Photo Metadata
     const photoCount = 31;
     const photos: ParticleData[] = [];
     for (let i = 0; i < photoCount; i++) {
-        // Spiral placement on tree
         const t = i / (photoCount - 1);
-        const h = t * 10 - 5; // -5 to 5 height
-        const radius = (6 - (h + 5)) * 0.6 + 1.5; 
-        const angle = t * Math.PI * 8; // 4 full rotations
+        const h = t * 10 - 5; 
+        const radius = (6 - (h + 5)) * 0.6 + 1.8; // Slightly outside
+        const angle = t * Math.PI * 8; 
         
-        // Chaos position
         const rTheta = Math.random() * Math.PI * 2;
         const rPhi = Math.acos(2 * Math.random() - 1);
-        const rRad = 10 + Math.random() * 8;
+        const rRad = 12 + Math.random() * 8;
 
         photos.push({
             id: `photo-${i}`,
@@ -202,20 +244,20 @@ const TreeSystem: React.FC = () => {
                 Math.sin(angle) * radius
             ],
             chaosRot: [Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI],
-            treeRot: [0, -angle + Math.PI / 2, 0.1], // Face outwards
-            scale: 0.8 + Math.random() * 0.4,
-            color: 'white',
-            image: `https://picsum.photos/seed/${i + 42}/400/500`
+            treeRot: [0, -angle + Math.PI / 2, 0], 
+            scale: 0.9 + Math.random() * 0.3,
+            image: `https://picsum.photos/seed/${i + 55}/400/500`,
+            color: 'white' // Placeholder
         });
     }
 
     return { 
         foliageData: { current: foliage, chaos: foliageChaos, tree: foliageTree, sizes }, 
+        lightsData: { chaos: lightChaos, tree: lightTree, count: lightCount },
         photosData: photos 
     };
   }, []);
 
-  // Initialize photo refs
   useEffect(() => {
     setPhotoObjects(photosData.map(p => ({
       id: p.id,
@@ -230,12 +272,10 @@ const TreeSystem: React.FC = () => {
 
   // --- Animation Loop ---
   useFrame((state3d, delta) => {
-    // 1. Update State Progress (Smooth Damp)
+    // 1. Update State Progress
     const targetProgress = state === 'FORMED' ? 1 : 0;
     progress.current = THREE.MathUtils.damp(progress.current, targetProgress, 2.0, delta);
     const p = progress.current;
-    
-    // Smoothstep for visual interpolation
     const ease = p * p * (3 - 2 * p);
 
     // 2. Global Rotation
@@ -250,37 +290,23 @@ const TreeSystem: React.FC = () => {
 
         for (let i = 0; i < positions.length / 3; i++) {
             const i3 = i * 3;
-            
-            // Chaos Coords
+            // Vortex Math
             const cx = foliageData.chaos[i3];
             const cy = foliageData.chaos[i3+1];
             const cz = foliageData.chaos[i3+2];
-
-            // Tree Coords
             const tx = foliageData.tree[i3];
             const ty = foliageData.tree[i3+1];
             const tz = foliageData.tree[i3+2];
 
-            // Vortex Math
-            // Current Y
             const y = THREE.MathUtils.lerp(cy, ty, ease);
-            
-            // Target Radius and Angle (Formed)
             const tr = Math.sqrt(tx*tx + tz*tz);
             const tAngle = Math.atan2(tz, tx);
-            
-            // Current Radius (lerp from chaos radius to tree radius)
             const cr = Math.sqrt(cx*cx + cz*cz);
             const r = THREE.MathUtils.lerp(cr, tr, ease);
             
-            // Vortex Angle: 
-            // Start with a chaotic offset, blend to target angle
-            // Add a spiral twist based on (1-p)
-            // Add continuous rotation
-            const vortexTwist = (1 - ease) * 15.0; // Twist amount
+            const vortexTwist = (1 - ease) * 15.0;
             const currentAngle = tAngle + vortexTwist + treeRotation.current;
 
-            // Apply positions
             const formedX = r * Math.cos(currentAngle);
             const formedZ = r * Math.sin(currentAngle);
             
@@ -295,13 +321,55 @@ const TreeSystem: React.FC = () => {
         pointsRef.current.geometry.attributes.position.needsUpdate = true;
     }
 
-    // 4. Update Photos
+    // 4. Update Lights (InstancedMesh)
+    if (lightsRef.current) {
+        const dummy = new THREE.Object3D();
+        for (let i = 0; i < lightsData.count; i++) {
+             const i3 = i * 3;
+             const cx = lightsData.chaos[i3];
+             const cy = lightsData.chaos[i3+1];
+             const cz = lightsData.chaos[i3+2];
+             const tx = lightsData.tree[i3];
+             const ty = lightsData.tree[i3+1];
+             const tz = lightsData.tree[i3+2];
+
+             const y = THREE.MathUtils.lerp(cy, ty, ease);
+             const tr = Math.sqrt(tx*tx + tz*tz);
+             const tAngle = Math.atan2(tz, tx);
+             const cr = Math.sqrt(cx*cx + cz*cz);
+             const r = THREE.MathUtils.lerp(cr, tr, ease);
+             
+             const vortexTwist = (1 - ease) * 12.0;
+             const currentAngle = tAngle + vortexTwist + treeRotation.current;
+             
+             const cAngle = Math.atan2(cz, cx);
+             const cRotatedX = cr * Math.cos(cAngle + treeRotation.current * 0.3);
+             const cRotatedZ = cr * Math.sin(cAngle + treeRotation.current * 0.3);
+             
+             const fx = THREE.MathUtils.lerp(cRotatedX, r * Math.cos(currentAngle), ease);
+             const fz = THREE.MathUtils.lerp(cRotatedZ, r * Math.sin(currentAngle), ease);
+
+             dummy.position.set(fx, y, fz);
+             dummy.scale.setScalar(1);
+             dummy.updateMatrix();
+             lightsRef.current.setMatrixAt(i, dummy.matrix);
+        }
+        lightsRef.current.instanceMatrix.needsUpdate = true;
+    }
+
+    // 5. Update Trunk
+    if (trunkRef.current) {
+        // Fade in and scale up trunk only when forming
+        const trunkScale = THREE.MathUtils.smoothstep(ease, 0.3, 1.0);
+        trunkRef.current.scale.set(trunkScale, ease, trunkScale);
+        trunkRef.current.position.y = 1; // Center offset
+        trunkRef.current.rotation.y = treeRotation.current;
+    }
+
+    // 6. Update Photos
     photoObjects.forEach((obj) => {
         if (!obj.ref.current) return;
-        
         const { chaosPos, treePos, chaosRot, treeRot } = obj.data;
-        
-        // Pos Interp
         const [cx, cy, cz] = chaosPos;
         const [tx, ty, tz] = treePos;
         
@@ -314,7 +382,6 @@ const TreeSystem: React.FC = () => {
         const vortexTwist = (1 - ease) * 10.0;
         const currentAngle = tAngle + vortexTwist + treeRotation.current;
         
-        // Chaos orbit
         const cAngle = Math.atan2(cz, cx);
         const cRotatedX = cr * Math.cos(cAngle + treeRotation.current * 0.2);
         const cRotatedZ = cr * Math.sin(cAngle + treeRotation.current * 0.2);
@@ -328,9 +395,7 @@ const TreeSystem: React.FC = () => {
             THREE.MathUtils.lerp(cRotatedZ, targetZ, ease)
         );
 
-        const lookAtAngle = -currentAngle + Math.PI / 2; // Face outward from center
-        
-        // Simple Lerp for Euler
+        const lookAtAngle = -currentAngle + Math.PI / 2;
         obj.ref.current.rotation.x = THREE.MathUtils.lerp(chaosRot[0], treeRot[0], ease);
         obj.ref.current.rotation.y = THREE.MathUtils.lerp(chaosRot[1], lookAtAngle, ease);
         obj.ref.current.rotation.z = THREE.MathUtils.lerp(chaosRot[2], treeRot[2], ease);
@@ -339,6 +404,16 @@ const TreeSystem: React.FC = () => {
 
   return (
     <group>
+      {/* Tree Trunk */}
+      <mesh ref={trunkRef} position={[0, 0, 0]}>
+        <cylinderGeometry args={[0.2, 0.8, 14, 8]} />
+        <meshStandardMaterial 
+            color="#3E2723" 
+            roughness={0.9} 
+            metalness={0.1}
+        />
+      </mesh>
+
       {/* Foliage Particles */}
       <points ref={pointsRef}>
         <bufferGeometry>
@@ -358,6 +433,17 @@ const TreeSystem: React.FC = () => {
         {/* @ts-ignore */}
         <foliageMaterial transparent depthWrite={false} blending={THREE.AdditiveBlending} />
       </points>
+
+      {/* Fairy Lights - Small and bright */}
+      <instancedMesh ref={lightsRef} args={[undefined, undefined, lightsData.count]}>
+        <sphereGeometry args={[0.05, 8, 8]} />
+        <meshStandardMaterial 
+            color="#ffddaa" 
+            emissive="#ffbb00" 
+            emissiveIntensity={3} 
+            toneMapped={false}
+        />
+      </instancedMesh>
 
       {/* Photos */}
       {photoObjects.map((obj) => (

@@ -1,11 +1,12 @@
+
 import React, { useContext, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { MeshTransmissionMaterial } from '@react-three/drei';
 import * as THREE from 'three';
-import { TreeContext } from '../types';
+import { TreeContext, TreeContextType } from '../types';
 
 const CrystalOrnaments: React.FC = () => {
-  const { state, rotationSpeed } = useContext(TreeContext);
+  const { state, rotationSpeed } = useContext(TreeContext) as TreeContextType;
   const groupRef = useRef<THREE.Group>(null);
   
   // Progress & Rotation State
@@ -136,9 +137,9 @@ const CrystalOrnaments: React.FC = () => {
         </mesh>
       ))}
 
-      {/* TOP STAR */}
+      {/* TOP STAR - Updated to Sphere */}
       <mesh name="STAR" position={[0, 7.5, 0]}>
-        <sphereGeometry args={[0.5, 16, 16]} />
+        <sphereGeometry args={[0.25, 32, 32]} />
         <meshStandardMaterial 
           color="#ffdd00" 
           emissive="#ffaa00"
