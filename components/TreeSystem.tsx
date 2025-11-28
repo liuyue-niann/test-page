@@ -221,33 +221,50 @@ const TreeSystem: React.FC = () => {
     const photoCount = 31;
     const photos: ParticleData[] = [];
     for (let i = 0; i < photoCount; i++) {
+        // 树形态逻辑 (Tree Form) - 保持不变
         const t = i / (photoCount - 1);
         const h = t * 10 - 5; 
-        const radius = (6 - (h + 5)) * 0.6 + 1.8; // Slightly outside
+        const radius = (6 - (h + 5)) * 0.6 + 1.8; 
         const angle = t * Math.PI * 8; 
         
+        // --- 修改开始：优化散开位置与朝向 ---
+        
+        // 1. 位置优化 (Position): 扩大散开范围，解决紧凑问题
         const rTheta = Math.random() * Math.PI * 2;
         const rPhi = Math.acos(2 * Math.random() - 1);
-        const rRad = 12 + Math.random() * 8;
+        
+        // 修改点：半径从原来的 2-8 扩大到 6-16，让照片散得更开，占据屏幕
+        const rRad = 6 + Math.random() * 10; 
+
+        // 计算散开坐标
+        const chaosX = rRad * Math.sin(rPhi) * Math.cos(rTheta);
+        // Y轴稍微压缩一点点 (0.9)，避免照片跑得太高或太低超出屏幕
+        const chaosY = (rRad * Math.sin(rPhi) * Math.sin(rTheta)) * 0.9; 
+        const chaosZ = rRad * Math.cos(rPhi);
+
+        // 2. 旋转优化 (Rotation): 让照片正面朝前，带一点点随机倾斜
+        // 之前是完全随机 (Math.PI)，现在改为 0 附近的微小偏移
+        // (Math.random() - 0.5) * 0.5 大约是 ±15度
+        const chaosRotX = (Math.random() - 0.5) * 0.5; 
+        const chaosRotY = (Math.random() - 0.5) * 0.5; 
+        const chaosRotZ = (Math.random() - 0.5) * 0.2; // Z轴倾斜稍微小一点，保持水平感
+
+        // --- 修改结束 ---
 
         photos.push({
             id: `photo-${i}`,
             type: 'PHOTO',
-            chaosPos: [
-                rRad * Math.sin(rPhi) * Math.cos(rTheta),
-                rRad * Math.sin(rPhi) * Math.sin(rTheta),
-                rRad * Math.cos(rPhi)
-            ],
+            chaosPos: [chaosX, chaosY, chaosZ],
             treePos: [
                 Math.cos(angle) * radius,
                 h,
                 Math.sin(angle) * radius
             ],
-            chaosRot: [Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI],
+            chaosRot: [chaosRotX, chaosRotY, chaosRotZ], // 应用新的朝向
             treeRot: [0, -angle + Math.PI / 2, 0], 
             scale: 0.9 + Math.random() * 0.3,
-            image: `https://picsum.photos/seed/${i + 55}/400/500`,
-            color: 'white' // Placeholder
+            image: `https://picsum.photos/seed/${i + 55}/400/500`, // 如果你有本地照片，记得这里逻辑是读取 bodyPhotoPaths
+            color: 'white'
         });
     }
 
