@@ -1,40 +1,46 @@
-
 import React, { useContext, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { MeshTransmissionMaterial } from '@react-three/drei';
 import * as THREE from 'three';
-import { TreeContext, TreeContextType } from '../types';
+import { TreeContext } from '../types';
 
 const CrystalOrnaments: React.FC = () => {
-  const { state, rotationSpeed } = useContext(TreeContext) as TreeContextType;
+  const { state, rotationSpeed } = useContext(TreeContext);
   const groupRef = useRef<THREE.Group>(null);
   
-  // Progress & Rotation State
   const progress = useRef(0);
   const treeRotation = useRef(0);
 
-  // Generate static data for ornaments
   const ornaments = useMemo(() => {
-    const count = 40;
+    const count = 60; // 稍微再多加几个装饰品，让颜色更丰富
     const items = [];
     
+    // 定义颜色池：圣诞红、金、圣诞绿
+    const colors = ['#D32F2F', '#FFD700', '#2E7D32'];
+
     for (let i = 0; i < count; i++) {
         // Tree Form Data
         const t = i / count;
         const h = t * 11 - 5.5; 
         const r = (6 - (h + 5.5)) * 0.5 + 0.5;
-        const angle = t * Math.PI * 13; // Lots of wraps
+        const angle = t * Math.PI * 13;
         
-        // Chaos Form Data
+        // Chaos Form Data (保持在照片外圈)
+        const radius = 10 + Math.random() * 12;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        
         const chaosPos = [
-            (Math.random() - 0.5) * 20,
-            (Math.random() - 0.5) * 20,
-            (Math.random() - 0.5) * 20
+            radius * Math.sin(phi) * Math.cos(theta),
+            radius * Math.sin(phi) * Math.sin(theta),
+            radius * Math.cos(phi)
         ];
 
         // Type
-        const type = Math.random() > 0.6 ? 'sphere' : (Math.random() > 0.5 ? 'box' : 'octahedron');
-        const color = Math.random() > 0.5 ? '#ff3333' : '#ffd700';
+        const type = Math.random() > 0.5 ? 'sphere' : 'box';
+        
+        // --- 修改重点：添加绿色 ---
+        // 随机从颜色池中取一个颜色
+        const color = colors[Math.floor(Math.random() * colors.length)];
 
         items.push({
             id: i,
@@ -42,7 +48,7 @@ const CrystalOrnaments: React.FC = () => {
             treeCyl: { h, r, angle },
             type,
             color,
-            scale: Math.random() * 0.3 + 0.2
+            scale: Math.random() * 0.2 + 0.15 
         });
     }
     return items;
@@ -59,15 +65,11 @@ const CrystalOrnaments: React.FC = () => {
 
     if (groupRef.current) {
         groupRef.current.children.forEach((child, i) => {
-            // Skip the star (last child usually, or identified by name)
             if (child.name === 'STAR') {
-                // Animate Star separately (always at top)
                 const starY = THREE.MathUtils.lerp(10, 7.5, ease);
                 child.position.set(0, starY, 0);
                 child.rotation.y += delta * 0.5;
-                child.rotation.z = Math.sin(state3d.clock.elapsedTime) * 0.1;
-                // Scale pulse
-                const s = 1.5 + Math.sin(state3d.clock.elapsedTime * 3) * 0.1;
+                const s = 1.0 + Math.sin(state3d.clock.elapsedTime * 3) * 0.1;
                 child.scale.setScalar(THREE.MathUtils.lerp(0, s, ease));
                 return;
             }
@@ -75,26 +77,22 @@ const CrystalOrnaments: React.FC = () => {
             const data = ornaments[i];
             if (!data) return;
 
-            // Chaos
             const cx = data.chaosPos.x;
             const cy = data.chaosPos.y;
             const cz = data.chaosPos.z;
             const cr = Math.sqrt(cx*cx + cz*cz);
             const cAngle = Math.atan2(cz, cx);
 
-            // Tree
             const { h, r, angle } = data.treeCyl;
 
-            // Interpolate
             const y = THREE.MathUtils.lerp(cy, h, ease);
             const currentR = THREE.MathUtils.lerp(cr, r, ease);
             
             const vortexTwist = (1 - ease) * 12.0;
             const currentAngle = angle + vortexTwist + treeRotation.current;
 
-            // Chaos Orbit
-            const cRotatedX = cr * Math.cos(cAngle + treeRotation.current * 0.3);
-            const cRotatedZ = cr * Math.sin(cAngle + treeRotation.current * 0.3);
+            const cRotatedX = cr * Math.cos(cAngle + treeRotation.current * 0.1);
+            const cRotatedZ = cr * Math.sin(cAngle + treeRotation.current * 0.1);
 
             const tX = currentR * Math.cos(currentAngle);
             const tZ = currentR * Math.sin(currentAngle);
@@ -103,51 +101,42 @@ const CrystalOrnaments: React.FC = () => {
             child.position.y = y;
             child.position.z = THREE.MathUtils.lerp(cRotatedZ, tZ, ease);
 
-            // Rotate objects
             child.rotation.x += delta * (1 - ease);
             child.rotation.y += delta * (1 - ease);
         });
     }
   });
 
-  // Reusable Material Props
-  const materialProps = {
-    thickness: 0.2,
-    roughness: 0,
-    transmission: 1,
-    ior: 1.5,
-    chromaticAberration: 0.1, // High dispersion for crystal look
-    backside: true,
-  };
-
   return (
     <group ref={groupRef}>
       {ornaments.map((o, i) => (
         <mesh key={i} scale={o.scale} castShadow receiveShadow>
           {o.type === 'sphere' && <sphereGeometry args={[1, 32, 32]} />}
-          {o.type === 'box' && <boxGeometry args={[1.2, 1.2, 1.2]} />}
-          {o.type === 'octahedron' && <octahedronGeometry args={[1, 0]} />}
+          {o.type === 'box' && <boxGeometry args={[1, 1, 1]} />}
           
-          <MeshTransmissionMaterial 
-            {...materialProps} 
+          {/* 关键修改：材质参数调整 */}
+          <meshStandardMaterial 
             color={o.color} 
-            distortion={0.5} 
-            distortionScale={0.5} 
+            roughness={0.2}
+            metalness={0.5}        /* 降低金属感：从 0.8 降到 0.5，减少变黑的情况 */
+            emissive={o.color}
+            emissiveIntensity={0.8} /* 提高自发光：从 0.4 升到 0.8，确保在黑背景下发亮 */
           />
         </mesh>
       ))}
 
-      {/* TOP STAR - Updated to Sphere */}
+      {/* TOP STAR */}
       <mesh name="STAR" position={[0, 7.5, 0]}>
         <sphereGeometry args={[0.25, 32, 32]} />
         <meshStandardMaterial 
           color="#ffdd00" 
           emissive="#ffaa00"
-          emissiveIntensity={4}
-          roughness={0.1}
-          metalness={1}
+          emissiveIntensity={3}
+          roughness={0.2}
+          metalness={1.0}
+          toneMapped={false}
         />
-        <pointLight intensity={2} color="#ffaa00" distance={5} decay={2} />
+        <pointLight intensity={2} color="#ffaa00" distance={8} decay={2} />
       </mesh>
     </group>
   );
