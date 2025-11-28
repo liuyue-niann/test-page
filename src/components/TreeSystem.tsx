@@ -1,8 +1,8 @@
 
 import React, { useRef, useMemo, useContext, useState, useEffect } from 'react';
-import { useFrame, extend, useThree, Object3DNode } from '@react-three/fiber';
+import { useFrame, extend, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { shaderMaterial, useTexture } from '@react-three/drei';
+import { shaderMaterial } from '@react-three/drei';
 import * as random from 'maath/random/dist/maath-random.esm';
 import { TreeContext, ParticleData, TreeContextType } from '../types';
 
@@ -16,15 +16,41 @@ extend({ FoliageMaterial });
 
 declare module '@react-three/fiber' {
   interface ThreeElements {
-    foliageMaterial: Object3DNode<THREE.ShaderMaterial, typeof FoliageMaterial>
+    foliageMaterial: any
   }
 }
 
 // --- Photo Component ---
 const PolaroidPhoto: React.FC<{ url: string; position: THREE.Vector3; rotation: THREE.Euler; scale: number; id: string; }> = ({ url, position, rotation, scale, id }) => {
-  const texture = useTexture(url);
-  texture.wrapS = THREE.ClampToEdgeWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
+  const [texture, setTexture] = useState<THREE.Texture | null>(null);
+
+  useEffect(() => {
+    const loader = new THREE.TextureLoader();
+    loader.load(
+      url,
+      (tex) => {
+        tex.wrapS = THREE.ClampToEdgeWrapping;
+        tex.wrapT = THREE.ClampToEdgeWrapping;
+        tex.colorSpace = THREE.SRGBColorSpace;
+        setTexture(tex);
+      },
+      undefined, // onProgress
+      () => {
+        // Error handling: Fallback to Picsum if local image is missing
+        console.warn(`Failed to load local image: ${url}. Switching to fallback.`);
+        const seed = id.split('-')[1] || '55';
+        const fallbackUrl = `https://picsum.photos/seed/${parseInt(seed)+55}/400/500`;
+        
+        loader.load(fallbackUrl, (fbTex) => {
+            fbTex.wrapS = THREE.ClampToEdgeWrapping;
+            fbTex.wrapT = THREE.ClampToEdgeWrapping;
+            fbTex.colorSpace = THREE.SRGBColorSpace;
+            setTexture(fbTex);
+        });
+      }
+    );
+  }, [url, id]);
+
   return (
     <group position={position} rotation={rotation} scale={scale}>
       <mesh position={[0, 0, 0]} userData={{ photoId: id, photoUrl: url }}>
@@ -33,7 +59,12 @@ const PolaroidPhoto: React.FC<{ url: string; position: THREE.Vector3; rotation: 
       </mesh>
       <mesh position={[0, 0.15, 0.015]} userData={{ photoId: id, photoUrl: url }}>
         <planeGeometry args={[0.9, 0.9]} />
-        <meshPhysicalMaterial map={texture} roughness={0.2} clearcoat={1.0} toneMapped={false} />
+        {texture ? (
+            <meshPhysicalMaterial map={texture} roughness={0.2} clearcoat={1.0} toneMapped={false} />
+        ) : (
+            // Loading state placeholder
+            <meshStandardMaterial color="#222" />
+        )}
       </mesh>
     </group>
   );
@@ -56,7 +87,7 @@ const TreeSystem: React.FC = () => {
   
   const [photoObjects, setPhotoObjects] = useState<{ id: string; url: string; ref: React.MutableRefObject<THREE.Group | null>; data: ParticleData; pos: THREE.Vector3; rot: THREE.Euler; scale: number; }[]>([]);
 
-  // --- Data Generation (保持不变) ---
+  // --- Data Generation ---
   const { foliageData, photosData, lightsData } = useMemo(() => {
     const particleCount = 4500;
     const foliage = new Float32Array(particleCount*3); const foliageChaos=new Float32Array(particleCount*3); const foliageTree=new Float32Array(particleCount*3); const sizes=new Float32Array(particleCount);
@@ -73,7 +104,11 @@ const TreeSystem: React.FC = () => {
         const t=i/(photoCount-1);const h=t*10-5;const radius=(6-(h+5))*0.6+1.8;const angle=t*Math.PI*8;
         const rTheta=Math.random()*Math.PI*2;const rPhi=Math.acos(2*Math.random()-1);const rRad=6+Math.random()*10;
         const chaosX=rRad*Math.sin(rPhi)*Math.cos(rTheta);const chaosY=(rRad*Math.sin(rPhi)*Math.sin(rTheta))*0.9;const chaosZ=rRad*Math.cos(rPhi);
-        photos.push({ id:`photo-${i}`, type:'PHOTO', chaosPos:[chaosX,chaosY,chaosZ], treePos:[Math.cos(angle)*radius,h,Math.sin(angle)*radius], chaosRot:[(Math.random()-0.5)*0.5,(Math.random()-0.5)*0.5,(Math.random()-0.5)*0.2], treeRot:[0,-angle+Math.PI/2,0.1], scale:0.9+Math.random()*0.3, image:`https://picsum.photos/seed/${i+55}/400/500`, color:'white' });
+        
+        // 关键修改：移除 public 前缀，Web 访问时 public 是根目录
+        const imageUrl = `/photos/${i + 1}.jpg`;
+
+        photos.push({ id:`photo-${i}`, type:'PHOTO', chaosPos:[chaosX,chaosY,chaosZ], treePos:[Math.cos(angle)*radius,h,Math.sin(angle)*radius], chaosRot:[(Math.random()-0.5)*0.5,(Math.random()-0.5)*0.5,(Math.random()-0.5)*0.2], treeRot:[0,-angle+Math.PI/2,0.1], scale:0.9+Math.random()*0.3, image: imageUrl, color:'white' });
     }
     return { foliageData: { current: foliage, chaos: foliageChaos, tree: foliageTree, sizes }, photosData: photos, lightsData: { chaos: lightChaos, tree: lightTree, count: lightCount } };
   }, []);
@@ -119,8 +154,6 @@ const TreeSystem: React.FC = () => {
         groupRef.current.position.y = currentPan.current.y;
     }
 
-    // ... Update Logic (Particles, Lights, Photos) ...
-    // (逻辑保持不变，省略以节省空间，但代码功能需完整)
     if (pointsRef.current) {
         // @ts-ignore
         pointsRef.current.material.uniforms.uTime.value = state3d.clock.getElapsedTime();
