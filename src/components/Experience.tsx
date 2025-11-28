@@ -5,10 +5,10 @@ import { EffectComposer, Bloom, Vignette, Noise } from '@react-three/postprocess
 import * as THREE from 'three';
 import TreeSystem from './TreeSystem';
 import CrystalOrnaments from './CrystalOrnaments';
-import { TreeContext } from '../types';
+import { TreeContext, TreeContextType } from '../types';
 
 const Rig = () => {
-  const { state } = useContext(TreeContext);
+  const { state } = useContext(TreeContext) as TreeContextType;
   useFrame((state3d) => {
     // Gentle floating camera movement
     const t = state3d.clock.getElapsedTime();
@@ -32,7 +32,7 @@ const Experience: React.FC = () => {
       gl={{ 
         antialias: false, 
         toneMapping: THREE.ReinhardToneMapping, 
-        toneMappingExposure: 1.2,
+        toneMappingExposure: 1.5,
         stencil: false,
         depth: true
       }}
@@ -40,17 +40,17 @@ const Experience: React.FC = () => {
       <color attach="background" args={['#010103']} />
       
       {/* Cinematic Lighting */}
-      <ambientLight intensity={0.2} color="#001133" />
+      <ambientLight intensity={0.4} color="#001133" />
       <spotLight 
         position={[10, 20, 10]} 
         angle={0.5} 
         penumbra={1} 
-        intensity={5} 
+        intensity={8} 
         color="#fff0dd" 
         castShadow 
       />
-      <pointLight position={[-10, -5, -10]} intensity={2} color="#004225" />
-      <pointLight position={[0, 0, 0]} intensity={0.5} color="#ffaa00" distance={10} />
+      <pointLight position={[-10, -5, -10]} intensity={3} color="#004225" />
+      <pointLight position={[0, 0, 0]} intensity={1} color="#ffaa00" distance={10} />
       
       {/* Environment */}
       <Stars radius={50} depth={50} count={3000} factor={4} saturation={0} fade speed={1} />
@@ -74,14 +74,13 @@ const Experience: React.FC = () => {
       />
       <Rig />
 
-      {/* Post Processing - Optimized for Clarity */}
-      <EffectComposer disableNormalPass>
-        {/* Removed DepthOfField to fix blurriness issues */}
+      {/* Post Processing - Optimized for Clarity (No DoF) */}
+      <EffectComposer enableNormalPass={false}>
         <Bloom 
           luminanceThreshold={1.0} 
           mipmapBlur 
-          intensity={0.5} 
-          radius={0.3} 
+          intensity={0.6} 
+          radius={0.4} 
           levels={8}
         />
         <Noise opacity={0.04} />

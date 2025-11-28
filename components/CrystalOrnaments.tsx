@@ -138,7 +138,7 @@ const CrystalOrnaments: React.FC = () => {
 
       {/* TOP STAR */}
       <mesh name="STAR" position={[0, 7.5, 0]}>
-        <octahedronGeometry args={[1, 0]} />
+        <sphereGeometry args={[0.5, 16, 16]} />
         <meshStandardMaterial 
           color="#ffdd00" 
           emissive="#ffaa00"

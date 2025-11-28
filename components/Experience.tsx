@@ -75,7 +75,7 @@ const Experience: React.FC = () => {
       <Rig />
 
       {/* Post Processing - Optimized for Clarity */}
-      <EffectComposer disableNormalPass>
+      <EffectComposer enableNormalPass={false}>
         {/* Removed DepthOfField to fix blurriness issues */}
         <Bloom 
           luminanceThreshold={1.0} 

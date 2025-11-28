@@ -2,10 +2,10 @@ import React, { useContext, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { MeshTransmissionMaterial } from '@react-three/drei';
 import * as THREE from 'three';
-import { TreeContext } from '../types';
+import { TreeContext, TreeContextType } from '../types';
 
 const CrystalOrnaments: React.FC = () => {
-  const { state, rotationSpeed } = useContext(TreeContext);
+  const { state, rotationSpeed } = useContext(TreeContext) as TreeContextType;
   const groupRef = useRef<THREE.Group>(null);
   
   // Progress & Rotation State

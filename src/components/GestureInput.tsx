@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useContext, useState } from 'react';
 import { FilesetResolver, GestureRecognizer } from '@mediapipe/tasks-vision';
-import { TreeContext } from '../types';
+import { TreeContext, TreeContextType } from '../types';
 
 const GestureInput: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const { setState, setRotationSpeed } = useContext(TreeContext);
+  const { setState, setRotationSpeed } = useContext(TreeContext) as TreeContextType;
   const [loading, setLoading] = useState(true);
   const recognizerRef = useRef<GestureRecognizer | null>(null);
   const requestRef = useRef<number | null>(null);

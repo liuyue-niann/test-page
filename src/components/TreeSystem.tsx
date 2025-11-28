@@ -3,8 +3,7 @@ import { useFrame, extend } from '@react-three/fiber';
 import * as THREE from 'three';
 import { shaderMaterial } from '@react-three/drei';
 import * as maath from 'maath/random/dist/maath-random.esm';
-import { TreeContext } from '../types';
-import { ParticleData } from '../types';
+import { TreeContext, ParticleData, TreeContextType } from '../types';
 
 // --- Custom Shaders ---
 
@@ -152,7 +151,7 @@ const PolaroidPhoto: React.FC<{
 // --- Main Tree System ---
 
 const TreeSystem: React.FC = () => {
-  const { state, rotationSpeed } = useContext(TreeContext);
+  const { state, rotationSpeed } = useContext(TreeContext) as TreeContextType;
   const pointsRef = useRef<THREE.Points>(null);
   const lightsRef = useRef<THREE.InstancedMesh>(null);
   const trunkRef = useRef<THREE.Mesh>(null);
@@ -198,7 +197,7 @@ const TreeSystem: React.FC = () => {
     }
 
     // 2. Generate Fairy Lights
-    const lightCount = 200;
+    const lightCount = 300; // Increased count
     const lightChaos = new Float32Array(lightCount * 3);
     const lightTree = new Float32Array(lightCount * 3);
     const lSphere = maath.inSphere(new Float32Array(lightCount * 3), { radius: 20 });
@@ -210,7 +209,7 @@ const TreeSystem: React.FC = () => {
       const t = i / lightCount;
       const h = t * 13; // 0 to 13
       const coneRadius = (14 - h) * 0.48; // Slightly wider than foliage
-      const angle = t * Math.PI * 20; // High frequency spiral
+      const angle = t * Math.PI * 25; // High frequency spiral
       
       lightTree[i3] = Math.cos(angle) * coneRadius;
       lightTree[i3+1] = h - 6;
@@ -434,13 +433,13 @@ const TreeSystem: React.FC = () => {
         <foliageMaterial transparent depthWrite={false} blending={THREE.AdditiveBlending} />
       </points>
 
-      {/* Fairy Lights */}
+      {/* Fairy Lights - Small and bright */}
       <instancedMesh ref={lightsRef} args={[undefined, undefined, lightsData.count]}>
-        <sphereGeometry args={[0.08, 8, 8]} />
+        <sphereGeometry args={[0.05, 8, 8]} />
         <meshStandardMaterial 
             color="#ffddaa" 
             emissive="#ffbb00" 
-            emissiveIntensity={2} 
+            emissiveIntensity={3} 
             toneMapped={false}
         />
       </instancedMesh>
