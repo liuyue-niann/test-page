@@ -17,8 +17,40 @@ extend({ FoliageMaterial });
 declare module '@react-three/fiber' {
   interface ThreeElements {
     foliageMaterial: any
+    shimmerMaterial: any
   }
 }
+
+// --- Shimmer Material ---
+const ShimmerMaterial = shaderMaterial(
+  { uTime: 0, uColor: new THREE.Color('#ffffff') },
+  // Vertex Shader
+  `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  // Fragment Shader
+  `
+    uniform float uTime;
+    uniform vec3 uColor;
+    varying vec2 vUv;
+    void main() {
+      // 扫光条纹位置，周期性移动
+      float pos = mod(uTime * 0.8, 2.5) - 0.5; 
+      // 计算条纹强度 (倾斜)
+      float bar = smoothstep(0.0, 0.2, 0.2 - abs(vUv.x + vUv.y * 0.5 - pos));
+      
+      // 基础透明度 0，扫光处透明度高
+      float alpha = bar * 0.15;
+      
+      gl_FragColor = vec4(uColor, alpha);
+    }
+  `
+);
+extend({ ShimmerMaterial });
 
 // --- Photo Component ---
 const PolaroidPhoto: React.FC<{ url: string; position: THREE.Vector3; rotation: THREE.Euler; scale: number; id: string; }> = ({ url, position, rotation, scale, id }) => {
@@ -86,6 +118,11 @@ const PolaroidPhoto: React.FC<{ url: string; position: THREE.Vector3; rotation: 
           // 加载中状态 - 显示深灰色占位符
           <meshStandardMaterial color="#333" />
         )}
+      </mesh>
+      {/* 扫光效果覆盖层 */}
+      <mesh position={[0, 0.15, 0.02]} scale={[0.9, 0.9, 1]}>
+        <planeGeometry args={[1, 1]} />
+        <shimmerMaterial transparent depthWrite={false} blending={THREE.AdditiveBlending} />
       </mesh>
     </group>
   );
@@ -200,6 +237,19 @@ const TreeSystem: React.FC = () => {
       }
       lightsRef.current.instanceMatrix.needsUpdate = true;
     }
+    // 更新所有照片的扫光时间
+    photoObjects.forEach(obj => {
+      if (obj.ref.current) {
+        // 查找 shimmerMaterial 并更新 uTime
+        obj.ref.current.traverse((child) => {
+          // @ts-ignore
+          if (child.material && child.material.uniforms && child.material.uniforms.uTime) {
+            // @ts-ignore
+            child.material.uniforms.uTime.value = state3d.clock.getElapsedTime() + parseInt(obj.id.split('-')[1] || '0');
+          }
+        });
+      }
+    });
     if (trunkRef.current) {
       const trunkScale = THREE.MathUtils.smoothstep(ease, 0.3, 1.0); trunkRef.current.scale.set(trunkScale, ease, trunkScale); trunkRef.current.position.y = 1; trunkRef.current.rotation.y = treeRotation.current;
     }

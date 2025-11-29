@@ -30,6 +30,8 @@ const GestureInput: React.FC = () => {
   const lastPalmPos = useRef<{ x: number, y: number } | null>(null);
   // 记录上一帧双手距离，用于缩放
   const lastHandDistance = useRef<number | null>(null);
+  // 记录上一帧单手尺寸，用于单手缩放
+  const lastHandScale = useRef<number | null>(null);
 
   const isExtended = (landmarks: NormalizedLandmark[], tipIdx: number, mcpIdx: number, wrist: NormalizedLandmark) => {
     const tipDist = Math.hypot(landmarks[tipIdx].x - wrist.x, landmarks[tipIdx].y - wrist.y);
@@ -142,20 +144,36 @@ const GestureInput: React.FC = () => {
             gestureStreak.current.lastStable = null;
           }
 
-          // --- 逻辑分支 1: 五指平移 (仅在 CHAOS 且未打开照片时，且只有一只手) ---
-          if (currentState === 'CHAOS' && !isPhotoOpen && isFiveFingers && results.landmarks.length === 1) {
-            isPanning = true;
-            // 累加到全局位移
-            setPanOffset(prev => ({
-              x: prev.x + dx * 15,
-              y: prev.y - dy * 15
-            }));
-            detectedColor = "rgba(255, 215, 0, 0.8)"; // 金色
+          // --- 逻辑分支 1: 单手控制 (平移/缩放/旋转) ---
+          if (results.landmarks.length === 1) {
+            // 1.1 单手缩放 (全状态生效)
+            if (isFiveFingers) {
+              const currentScale = Math.hypot(wrist.x - landmarks[9].x, wrist.y - landmarks[9].y);
+              if (lastHandScale.current !== null) {
+                const deltaScale = currentScale - lastHandScale.current;
+                if (Math.abs(deltaScale) > 0.002) {
+                  setZoomOffset(prev => prev - deltaScale * 150.0);
+                }
+              }
+              lastHandScale.current = currentScale;
+            } else {
+              lastHandScale.current = null;
+            }
 
-            // 平移时清除光标状态
-            dwellTimerRef.current = 0;
-            setHoverProgress(0);
-
+            // 1.2 单手平移 (仅 CHAOS 且未打开照片)
+            if (currentState === 'CHAOS' && !isPhotoOpen && isFiveFingers) {
+              isPanning = true;
+              setPanOffset(prev => ({
+                x: prev.x + dx * 15,
+                y: prev.y - dy * 15
+              }));
+              detectedColor = "rgba(255, 215, 0, 0.8)"; // 金色
+              dwellTimerRef.current = 0;
+              setHoverProgress(0);
+            }
+          } else {
+            // 如果不是单手，重置单手缩放记录
+            lastHandScale.current = null;
           }
 
           // --- 逻辑分支 2: 单指光标 ---
@@ -165,7 +183,7 @@ const GestureInput: React.FC = () => {
 
             dwellTimerRef.current += delta;
 
-            const DWELL_THRESHOLD = 1.2;
+            const DWELL_THRESHOLD = 1.0;
             const progress = Math.min(dwellTimerRef.current / DWELL_THRESHOLD, 1.0);
             setHoverProgress(progress);
 
@@ -270,8 +288,8 @@ const GestureInput: React.FC = () => {
             }
           }
 
-          // --- 逻辑分支 4: 双手缩放 (仅在 CHAOS 模式) ---
-          if (currentState === 'CHAOS' && results.landmarks.length === 2) {
+          // --- 逻辑分支 4: 双手缩放 (全状态生效) ---
+          if (results.landmarks.length === 2) {
             const hand1 = results.landmarks[0][0]; // Wrist of hand 1
             const hand2 = results.landmarks[1][0]; // Wrist of hand 2
 
@@ -283,9 +301,9 @@ const GestureInput: React.FC = () => {
 
               // 距离变大 -> Zoom In (TargetZ 减小) -> delta > 0 -> zoomOffset 减小
               // 距离变小 -> Zoom Out (TargetZ 增大) -> delta < 0 -> zoomOffset 增大
-              // 灵敏度调整: 40.0 -> 80.0 (加大力度)
+              // 灵敏度调整: 80.0 -> 60.0 (稍微降低以提升平滑度)
               if (Math.abs(delta) > 0.005) {
-                setZoomOffset(prev => prev - delta * 80.0);
+                setZoomOffset(prev => prev - delta * 60.0);
                 detectedColor = "rgba(255, 0, 255, 0.8)"; // 紫色表示缩放
               }
             }
