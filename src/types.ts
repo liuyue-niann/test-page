@@ -36,6 +36,10 @@ export interface TreeContextType {
   // 新增：旋转加速度（FORMED状态下的额外速度）
   rotationBoost: number;
   setRotationBoost: Dispatch<SetStateAction<number>>;
+
+  // 新增：缩放偏移量 (双手手势控制)
+  zoomOffset: number;
+  setZoomOffset: Dispatch<SetStateAction<number>>;
 }
 
 export interface ParticleData {

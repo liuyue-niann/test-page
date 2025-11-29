@@ -6,7 +6,7 @@ const GestureInput: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const { setState, setRotationSpeed, setRotationBoost, setPointer, state: appState, setHoverProgress, setClickTrigger, selectedPhotoUrl, setPanOffset } = useContext(TreeContext) as TreeContextType;
+  const { setState, setRotationSpeed, setRotationBoost, setPointer, state: appState, setHoverProgress, setClickTrigger, selectedPhotoUrl, setPanOffset, setZoomOffset } = useContext(TreeContext) as TreeContextType;
 
   const stateRef = useRef(appState);
   const photoRef = useRef(selectedPhotoUrl);
@@ -28,6 +28,8 @@ const GestureInput: React.FC = () => {
 
   // 记录上一帧手掌中心位置，用于计算位移差
   const lastPalmPos = useRef<{ x: number, y: number } | null>(null);
+  // 记录上一帧双手距离，用于缩放
+  const lastHandDistance = useRef<number | null>(null);
 
   const isExtended = (landmarks: NormalizedLandmark[], tipIdx: number, mcpIdx: number, wrist: NormalizedLandmark) => {
     const tipDist = Math.hypot(landmarks[tipIdx].x - wrist.x, landmarks[tipIdx].y - wrist.y);
@@ -49,7 +51,7 @@ const GestureInput: React.FC = () => {
             delegate: "GPU"
           },
           runningMode: "VIDEO",
-          numHands: 1
+          numHands: 2
         });
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
           const stream = await navigator.mediaDevices.getUserMedia({
@@ -140,8 +142,8 @@ const GestureInput: React.FC = () => {
             gestureStreak.current.lastStable = null;
           }
 
-          // --- 逻辑分支 1: 五指平移 (仅在 CHAOS 且未打开照片时) ---
-          if (currentState === 'CHAOS' && !isPhotoOpen && isFiveFingers) {
+          // --- 逻辑分支 1: 五指平移 (仅在 CHAOS 且未打开照片时，且只有一只手) ---
+          if (currentState === 'CHAOS' && !isPhotoOpen && isFiveFingers && results.landmarks.length === 1) {
             isPanning = true;
             // 累加到全局位移
             setPanOffset(prev => ({
@@ -268,6 +270,30 @@ const GestureInput: React.FC = () => {
             }
           }
 
+          // --- 逻辑分支 4: 双手缩放 (仅在 CHAOS 模式) ---
+          if (currentState === 'CHAOS' && results.landmarks.length === 2) {
+            const hand1 = results.landmarks[0][0]; // Wrist of hand 1
+            const hand2 = results.landmarks[1][0]; // Wrist of hand 2
+
+            // 计算两手距离 (归一化坐标系)
+            const dist = Math.hypot(hand1.x - hand2.x, hand1.y - hand2.y);
+
+            if (lastHandDistance.current !== null) {
+              const delta = dist - lastHandDistance.current;
+
+              // 距离变大 -> Zoom In (TargetZ 减小) -> delta > 0 -> zoomOffset 减小
+              // 距离变小 -> Zoom Out (TargetZ 增大) -> delta < 0 -> zoomOffset 增大
+              // 灵敏度调整: 40.0 -> 80.0 (加大力度)
+              if (Math.abs(delta) > 0.005) {
+                setZoomOffset(prev => prev - delta * 80.0);
+                detectedColor = "rgba(255, 0, 255, 0.8)"; // 紫色表示缩放
+              }
+            }
+            lastHandDistance.current = dist;
+          } else {
+            lastHandDistance.current = null;
+          }
+
         } else {
           dwellTimerRef.current = 0;
           setHoverProgress(0);
@@ -285,8 +311,10 @@ const GestureInput: React.FC = () => {
             const landmarks = results.landmarks[0];
             const drawingUtils = new DrawingUtils(ctx);
 
-            drawingUtils.drawConnectors(landmarks, GestureRecognizer.HAND_CONNECTIONS, { color: detectedColor, lineWidth: 2 });
-            drawingUtils.drawLandmarks(landmarks, { color: "rgba(255, 255, 255, 0.5)", lineWidth: 1, radius: 2 });
+            for (const landmarks of results.landmarks) {
+              drawingUtils.drawConnectors(landmarks, GestureRecognizer.HAND_CONNECTIONS, { color: detectedColor, lineWidth: 2 });
+              drawingUtils.drawLandmarks(landmarks, { color: "rgba(255, 255, 255, 0.5)", lineWidth: 1, radius: 2 });
+            }
 
             if (currentPointer) {
               const indexTip = landmarks[8];

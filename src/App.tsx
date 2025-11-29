@@ -11,8 +11,8 @@ const DreamyCursor: React.FC<{ pointer: PointerCoords | null, progress: number }
         <motion.div
             className="fixed top-0 left-0 pointer-events-none z-[200]"
             initial={{ opacity: 0, scale: 0 }}
-            animate={{ 
-                opacity: 1, 
+            animate={{
+                opacity: 1,
                 scale: 1,
                 left: `${pointer.x * 100}%`,
                 top: `${pointer.y * 100}%`
@@ -23,10 +23,10 @@ const DreamyCursor: React.FC<{ pointer: PointerCoords | null, progress: number }
         >
             {/* 核心光点 */}
             <div className={`rounded-full transition-all duration-300 ${progress > 0.8 ? 'w-4 h-4 bg-emerald-400 shadow-[0_0_20px_#34d399]' : 'w-2 h-2 bg-amber-200 shadow-[0_0_15px_#fcd34d]'}`} />
-            
+
             {/* 进度光环 - 魔法符文风格 */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full border border-white/20 animate-spin-slow"></div>
-            
+
             <svg className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 -rotate-90 overflow-visible">
                 <defs>
                     <linearGradient id="magicGradient" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -34,24 +34,24 @@ const DreamyCursor: React.FC<{ pointer: PointerCoords | null, progress: number }
                         <stop offset="100%" stopColor="#fbbf24" />
                     </linearGradient>
                     <filter id="glow">
-                        <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
-                        <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                        <feGaussianBlur stdDeviation="2.5" result="coloredBlur" />
+                        <feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge>
                     </filter>
                 </defs>
                 {/* 倒计时圆环 */}
-                <circle 
-                    cx="24" cy="24" r="20" 
-                    fill="none" 
-                    stroke="url(#magicGradient)" 
-                    strokeWidth="3" 
+                <circle
+                    cx="24" cy="24" r="20"
+                    fill="none"
+                    stroke="url(#magicGradient)"
+                    strokeWidth="3"
                     strokeLinecap="round"
-                    strokeDasharray="125.6" 
-                    strokeDashoffset={125.6 * (1 - progress)} 
+                    strokeDasharray="125.6"
+                    strokeDashoffset={125.6 * (1 - progress)}
                     filter="url(#glow)"
-                    className="transition-[stroke-dashoffset] duration-75 ease-linear" 
+                    className="transition-[stroke-dashoffset] duration-75 ease-linear"
                 />
             </svg>
-            
+
             {/* 粒子拖尾装饰 (CSS 动画) */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 bg-gradient-to-r from-emerald-500/10 to-amber-500/10 rounded-full blur-xl animate-pulse"></div>
         </motion.div>
@@ -62,18 +62,18 @@ const DreamyCursor: React.FC<{ pointer: PointerCoords | null, progress: number }
 const PhotoModal: React.FC<{ url: string | null, onClose: () => void }> = ({ url, onClose }) => {
     if (!url) return null;
     return (
-        <motion.div 
+        <motion.div
             id="photo-modal-backdrop"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} 
-            className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-8 backdrop-blur-sm" 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-8 backdrop-blur-sm"
             onClick={onClose}
         >
-            <motion.div 
-                initial={{ scale: 0.8, y: 50, rotate: -5 }} 
-                animate={{ scale: 1, y: 0, rotate: 0 }} 
-                exit={{ scale: 0.5, opacity: 0, y: 100 }} 
+            <motion.div
+                initial={{ scale: 0.8, y: 50, rotate: -5 }}
+                animate={{ scale: 1, y: 0, rotate: 0 }}
+                exit={{ scale: 0.5, opacity: 0, y: 100 }}
                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                className="relative max-w-4xl max-h-full bg-white p-3 rounded shadow-[0_0_50px_rgba(255,255,255,0.2)] border-8 border-white" 
+                className="relative max-w-4xl max-h-full bg-white p-3 rounded shadow-[0_0_50px_rgba(255,255,255,0.2)] border-8 border-white"
                 onClick={(e) => e.stopPropagation()}
             >
                 <img src={url} alt="Memory" className="max-h-[80vh] object-contain rounded shadow-inner" />
@@ -125,7 +125,7 @@ const AppContent: React.FC = () => {
                 <div className="w-full flex justify-between items-end">
                     {/* 容器不需要额外样式，GestureInput 内部自带尺寸 */}
                     <div className="pointer-events-auto">
-                         {webcamEnabled && <GestureInput />}
+                        {webcamEnabled && <GestureInput />}
                     </div>
                 </div>
             </div>
@@ -148,7 +148,8 @@ const App: React.FC = () => {
     const [hoverProgress, setHoverProgress] = useState<number>(0);
     const [clickTrigger, setClickTrigger] = useState<number>(0);
     const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string | null>(null);
-    const [panOffset, setPanOffset] = useState<{x:number, y:number}>({x:0, y:0});
+    const [panOffset, setPanOffset] = useState<{ x: number, y: number }>({ x: 0, y: 0 });
+    const [zoomOffset, setZoomOffset] = useState<number>(0);
 
     return (
         <TreeContext.Provider value={{
@@ -160,7 +161,8 @@ const App: React.FC = () => {
             clickTrigger, setClickTrigger,
             selectedPhotoUrl, setSelectedPhotoUrl,
             panOffset, setPanOffset,
-            rotationBoost, setRotationBoost
+            rotationBoost, setRotationBoost,
+            zoomOffset, setZoomOffset
         }}>
             <AppContent />
         </TreeContext.Provider>
