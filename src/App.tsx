@@ -141,7 +141,8 @@ const AppContent: React.FC = () => {
 
 const App: React.FC = () => {
     const [state, setState] = useState<AppState>('CHAOS');
-    const [rotationSpeed, setRotationSpeed] = useState<number>(0.2);
+    const [rotationSpeed, setRotationSpeed] = useState<number>(0.3); // 固定基础旋转速度
+    const [rotationBoost, setRotationBoost] = useState<number>(0); // 额外加速度
     const [webcamEnabled, setWebcamEnabled] = useState<boolean>(true);
     const [pointer, setPointer] = useState<PointerCoords | null>(null);
     const [hoverProgress, setHoverProgress] = useState<number>(0);
@@ -158,7 +159,8 @@ const App: React.FC = () => {
             hoverProgress, setHoverProgress,
             clickTrigger, setClickTrigger,
             selectedPhotoUrl, setSelectedPhotoUrl,
-            panOffset, setPanOffset
+            panOffset, setPanOffset,
+            rotationBoost, setRotationBoost
         }}>
             <AppContent />
         </TreeContext.Provider>
