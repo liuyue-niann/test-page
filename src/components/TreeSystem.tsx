@@ -23,47 +23,68 @@ declare module '@react-three/fiber' {
 // --- Photo Component ---
 const PolaroidPhoto: React.FC<{ url: string; position: THREE.Vector3; rotation: THREE.Euler; scale: number; id: string; }> = ({ url, position, rotation, scale, id }) => {
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
+  const [loadStatus, setLoadStatus] = useState<'loading' | 'local' | 'fallback'>('loading');
 
   useEffect(() => {
     const loader = new THREE.TextureLoader();
+
+    // 先尝试加载本地照片
     loader.load(
       url,
       (tex) => {
+        // 本地照片加载成功
         tex.wrapS = THREE.ClampToEdgeWrapping;
         tex.wrapT = THREE.ClampToEdgeWrapping;
         tex.colorSpace = THREE.SRGBColorSpace;
         setTexture(tex);
+        setLoadStatus('local');
+        console.log(`✅ Successfully loaded local image: ${url}`);
       },
       undefined, // onProgress
-      () => {
-        // Error handling: Fallback to Picsum if local image is missing
-        console.warn(`Failed to load local image: ${url}. Switching to fallback.`);
+      (error) => {
+        // 本地照片加载失败，使用 Picsum 随机照片
+        console.warn(`⚠️ Local image not found: ${url}, loading random photo...`);
         const seed = id.split('-')[1] || '55';
-        const fallbackUrl = `https://picsum.photos/seed/${parseInt(seed)+55}/400/500`;
-        
-        loader.load(fallbackUrl, (fbTex) => {
+        const fallbackUrl = `https://picsum.photos/seed/${parseInt(seed)+100}/400/500`;
+
+        loader.load(
+          fallbackUrl,
+          (fbTex) => {
             fbTex.wrapS = THREE.ClampToEdgeWrapping;
             fbTex.wrapT = THREE.ClampToEdgeWrapping;
             fbTex.colorSpace = THREE.SRGBColorSpace;
             setTexture(fbTex);
-        });
+            setLoadStatus('fallback');
+            console.log(`✅ Loaded fallback image for ${url}`);
+          },
+          undefined,
+          (fallbackError) => {
+            console.error(`❌ Failed to load both local and fallback images for ${url}`, fallbackError);
+          }
+        );
       }
     );
   }, [url, id]);
 
   return (
     <group position={position} rotation={rotation} scale={scale}>
+      {/* 相框边框 - 本地照片用金色，网络照片用银色 */}
       <mesh position={[0, 0, 0]} userData={{ photoId: id, photoUrl: url }}>
         <boxGeometry args={[1, 1.25, 0.02]} />
-        <meshStandardMaterial color="#f0f0f0" roughness={0.2} metalness={0.5} />
+        <meshStandardMaterial
+          color={loadStatus === 'local' ? '#ffd700' : '#f0f0f0'}
+          roughness={0.2}
+          metalness={0.5}
+        />
       </mesh>
+      {/* 照片内容 */}
       <mesh position={[0, 0.15, 0.015]} userData={{ photoId: id, photoUrl: url }}>
         <planeGeometry args={[0.9, 0.9]} />
         {texture ? (
             <meshPhysicalMaterial map={texture} roughness={0.2} clearcoat={1.0} toneMapped={false} />
         ) : (
-            // Loading state placeholder
-            <meshStandardMaterial color="#222" />
+            // 加载中状态 - 显示深灰色占位符
+            <meshStandardMaterial color="#333" />
         )}
       </mesh>
     </group>
