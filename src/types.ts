@@ -51,6 +51,8 @@ export interface ParticleData {
   scale: number;
   color: string;
   image?: string;
+  year?: number; // 新增：照片年份
+  month?: string;
   type: 'LEAF' | 'ORNAMENT' | 'PHOTO';
 }
 

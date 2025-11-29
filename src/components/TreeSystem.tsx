@@ -2,7 +2,7 @@
 import React, { useRef, useMemo, useContext, useState, useEffect } from 'react';
 import { useFrame, extend, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { shaderMaterial } from '@react-three/drei';
+import { shaderMaterial, Text, Line } from '@react-three/drei';
 import * as random from 'maath/random/dist/maath-random.esm';
 import { TreeContext, ParticleData, TreeContextType } from '../types';
 
@@ -53,11 +53,14 @@ const ShimmerMaterial = shaderMaterial(
 extend({ ShimmerMaterial });
 
 // --- Photo Component ---
-const PolaroidPhoto: React.FC<{ url: string; position: THREE.Vector3; rotation: THREE.Euler; scale: number; id: string; }> = ({ url, position, rotation, scale, id }) => {
+const PolaroidPhoto: React.FC<{ url: string; position: THREE.Vector3; rotation: THREE.Euler; scale: number; id: string; shouldLoad: boolean }> = ({ url, position, rotation, scale, id, shouldLoad }) => {
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
-  const [loadStatus, setLoadStatus] = useState<'loading' | 'local' | 'fallback'>('loading');
+  const [loadStatus, setLoadStatus] = useState<'pending' | 'loading' | 'local' | 'fallback'>('pending');
 
   useEffect(() => {
+    if (!shouldLoad || loadStatus !== 'pending') return;
+
+    setLoadStatus('loading');
     const loader = new THREE.TextureLoader();
 
     // 先尝试加载本地照片
@@ -96,7 +99,7 @@ const PolaroidPhoto: React.FC<{ url: string; position: THREE.Vector3; rotation: 
         );
       }
     );
-  }, [url, id]);
+  }, [url, id, shouldLoad, loadStatus]);
 
   return (
     <group position={position} rotation={rotation} scale={scale}>
@@ -143,7 +146,23 @@ const TreeSystem: React.FC = () => {
   // 用于平滑过渡 Pan
   const currentPan = useRef({ x: 0, y: 0 });
 
+  // Staggered Loading State
+  const [loadedCount, setLoadedCount] = useState(0);
+
   const [photoObjects, setPhotoObjects] = useState<{ id: string; url: string; ref: React.MutableRefObject<THREE.Group | null>; data: ParticleData; pos: THREE.Vector3; rot: THREE.Euler; scale: number; }[]>([]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLoadedCount(prev => {
+        if (prev >= photoObjects.length) {
+          clearInterval(interval);
+          return prev;
+        }
+        return prev + 1; // Load 1 photo per tick (smoother)
+      });
+    }, 100); // 100ms interval
+    return () => clearInterval(interval);
+  }, [photoObjects.length]);
 
   // --- Data Generation ---
   const { foliageData, photosData, lightsData } = useMemo(() => {
@@ -157,16 +176,81 @@ const TreeSystem: React.FC = () => {
     for (let i = 0; i < lightCount * 3; i++) lightChaos[i] = lSphere[i];
     for (let i = 0; i < lightCount; i++) { const i3 = i * 3; const t = i / lightCount; const h = t * 13; const coneRadius = (14 - h) * 0.48; const angle = t * Math.PI * 25; lightTree[i3] = Math.cos(angle) * coneRadius; lightTree[i3 + 1] = h - 6; lightTree[i3 + 2] = Math.sin(angle) * coneRadius; }
 
-    const photoCount = 31; const photos: ParticleData[] = [];
+    // 硬编码文件列表 (因为无法在运行时列出目录)
+    const photoFiles = [
+      "2015_02_1.jpg", "2015_02_3.jpg", "2015_05_2.jpg",
+      "2016_02_6.jpg", "2016_05_4.jpg", "2016_11_5.jpg",
+      "2017_06_7.jpg", "2017_10_8.jpg", "2017_10_9.jpg",
+      "2018_03_12.jpg", "2018_08_10.jpg", "2018_08_11.jpg",
+      "2019_06_15.jpg", "2019_07_13.jpg", "2019_11_14.jpg",
+      "2020_01_17.jpg", "2020_05_18.jpg", "2020_07_16.jpg",
+      "2021_02_19.jpg", "2021_05_21.jpg", "2021_11_20.jpg",
+      "2022_03_22.jpg", "2022_07_24.jpg", "2022_08_23.jpg",
+      "2023_02_25.jpg", "2023_07_26.jpg", "2023_10_27.jpg",
+      "2024_05_28.jpg", "2024_07_29.jpg", "2024_10_30.jpg", "2024_11_31.jpg"
+    ];
+
+    // 按时间排序
+    photoFiles.sort();
+
+    const photoCount = photoFiles.length;
+    const photos: ParticleData[] = [];
+
     for (let i = 0; i < photoCount; i++) {
-      const t = i / (photoCount - 1); const h = t * 10 - 5; const radius = (6 - (h + 5)) * 0.6 + 1.8; const angle = t * Math.PI * 8;
-      const rTheta = Math.random() * Math.PI * 2; const rPhi = Math.acos(2 * Math.random() - 1); const rRad = 6 + Math.random() * 10;
-      const chaosX = rRad * Math.sin(rPhi) * Math.cos(rTheta); const chaosY = (rRad * Math.sin(rPhi) * Math.sin(rTheta)) * 0.9; const chaosZ = rRad * Math.cos(rPhi);
+      const fileName = photoFiles[i];
+      // 解析文件名: YYYY_MM_ID.jpg
+      const parts = fileName.split('_');
+      const year = parseInt(parts[0]);
+      const month = parts[1]; // Keep as string "02"
 
-      // 关键修改：移除 public 前缀，Web 访问时 public 是根目录
-      const imageUrl = `/photos/${i + 1}.jpg`;
+      // --- FORMED: Time Spiral Layout ---
+      // 螺旋上升: i 越大 (越新)，h 越高
+      const t = i / (photoCount - 1);
+      const h = t * 14 - 7; // 高度范围 -7 到 7
+      const radius = (7 - (h + 7)) * 0.4 + 1.5; // 树锥形半径
+      const angle = t * Math.PI * 10; // 螺旋圈数 (5圈)
 
-      photos.push({ id: `photo-${i}`, type: 'PHOTO', chaosPos: [chaosX, chaosY, chaosZ], treePos: [Math.cos(angle) * radius, h, Math.sin(angle) * radius], chaosRot: [(Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.2], treeRot: [0, -angle + Math.PI / 2, 0.1], scale: 0.9 + Math.random() * 0.3, image: imageUrl, color: 'white' });
+      const treeX = Math.cos(angle) * radius;
+      const treeY = h;
+      const treeZ = Math.sin(angle) * radius;
+
+      // --- CHAOS: Nebula Cloud Layout ---
+      // 椭球体分布: X宽, Y高, Z深
+      // 保持时间顺序: 旧照片在外/下，新照片在内/上 (大致)
+      // 使用球坐标系随机分布，但受时间 t 影响半径
+
+      // 半径分布: 越新的越靠近中心 (t=1 -> r=5, t=0 -> r=15)
+      const nebulaRadius = 5 + (1 - t) * 10 + (Math.random() - 0.5) * 4;
+
+      // 角度分布: 随机，但限制在正面扇区 (-60度 到 +60度) 以便展示? 不，全景星云更好
+      // 既然要求"正面漏出来"，我们限制 Z 轴主要为负 (在相机前方) 或 随机分布但朝向相机
+      // 方案: 随机分布在前方半球
+      const theta = (Math.random() - 0.5) * Math.PI * 1.5; // 水平角度 -135 到 135
+      const phi = (Math.random() - 0.5) * Math.PI * 0.8; // 垂直角度
+
+      const chaosX = Math.sin(theta) * Math.cos(phi) * nebulaRadius * 1.5; // X轴拉宽
+      const chaosY = Math.sin(phi) * nebulaRadius * 0.8; // Y轴压扁
+      const chaosZ = Math.cos(theta) * Math.cos(phi) * nebulaRadius * 0.5; // Z轴压缩 (扁平星云)
+
+      const imageUrl = `/photos/${fileName}`;
+
+      photos.push({
+        id: `photo-${i}`,
+        type: 'PHOTO',
+        year: year,
+        month: month,
+        chaosPos: [chaosX, chaosY, chaosZ],
+        treePos: [treeX, treeY, treeZ],
+        chaosRot: [
+          (Math.random() - 0.5) * 0.2, // X: 微小随机倾斜
+          0 + (Math.random() - 0.5) * 0.2, // Y: 正面朝向 (0) + 微扰
+          (Math.random() - 0.5) * 0.1 // Z: 微小倾斜
+        ],
+        treeRot: [0, -angle + Math.PI / 2, 0], // 面向外
+        scale: 0.9 + Math.random() * 0.3,
+        image: imageUrl,
+        color: 'white'
+      });
     }
     return { foliageData: { current: foliage, chaos: foliageChaos, tree: foliageTree, sizes }, photosData: photos, lightsData: { chaos: lightChaos, tree: lightTree, count: lightCount } };
   }, []);
@@ -176,18 +260,50 @@ const TreeSystem: React.FC = () => {
   }, [photosData]);
 
   // --- 处理点击事件 ---
+  // --- 处理点击事件 (Screen-Space Distance Selection) ---
   useEffect(() => {
     if (state === 'CHAOS' && pointer && !selectedPhotoUrl) {
-      const x = pointer.x * 2 - 1;
-      const y = -(pointer.y * 2) + 1;
-      raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
-      const targets = photoObjects.map(obj => obj.ref.current).filter((group): group is THREE.Group => group !== null);
-      const intersects = raycaster.intersectObjects(targets, true);
-      if (intersects.length > 0) {
-        const hit = intersects[0];
-        let currentObj: THREE.Object3D | null = hit.object;
-        while (currentObj && !currentObj.userData.photoUrl) currentObj = currentObj.parent;
-        if (currentObj && currentObj.userData.photoUrl) setSelectedPhotoUrl(currentObj.userData.photoUrl);
+      // 1. 转换 Pointer 到 NDC (-1 to 1)
+      const ndcX = pointer.x * 2 - 1;
+      const ndcY = -(pointer.y * 2) + 1;
+
+      // 2. 遍历所有照片，计算屏幕空间距离
+      let closestPhotoId: string | null = null;
+      let minDistance = Infinity;
+      const SELECTION_THRESHOLD = 0.15; // 屏幕占比阈值 (约 15%)
+
+      photoObjects.forEach(obj => {
+        if (!obj.ref.current) return;
+
+        // 获取照片世界坐标
+        const worldPos = new THREE.Vector3();
+        obj.ref.current.getWorldPosition(worldPos);
+
+        // 投影到屏幕空间
+        const screenPos = worldPos.clone().project(camera);
+
+        // 检查是否在相机前方 (z < 1)
+        if (screenPos.z < 1) {
+          // 计算 NDC 距离
+          const dist = Math.hypot(screenPos.x - ndcX, screenPos.y - ndcY);
+
+          // 优先选择更近的 (距离更小) 且在阈值内
+          // 增加深度权重: 离相机越近 (screenPos.z 越小) 越容易被选中
+          // screenPos.z 在 frustum 内是 0~1 (linear depth approx)
+          // 修正: project 后的 z 不是线性深度，但可以用来判断相对前后
+          // 简单起见，我们只看 2D 距离，如果重叠严重再考虑深度
+          if (dist < SELECTION_THRESHOLD && dist < minDistance) {
+            minDistance = dist;
+            closestPhotoId = obj.data.image!;
+          }
+        }
+      });
+
+      if (closestPhotoId) {
+        setSelectedPhotoUrl(closestPhotoId);
+      } else if (selectedPhotoUrl) {
+        // Clicked on empty space -> Close photo
+        setSelectedPhotoUrl(null);
       }
     }
   }, [clickTrigger, selectedPhotoUrl]);
@@ -274,9 +390,62 @@ const TreeSystem: React.FC = () => {
       <instancedMesh ref={lightsRef} args={[undefined, undefined, lightsData.count]}><sphereGeometry args={[0.05, 8, 8]} /><meshStandardMaterial color="#ffddaa" emissive="#ffbb00" emissiveIntensity={3} toneMapped={false} /></instancedMesh>
       {photoObjects.map((obj, index) => (
         <group key={obj.id} ref={(el) => { obj.ref.current = el; }}>
-          <PolaroidPhoto url={obj.url} position={obj.pos} rotation={obj.rot} scale={obj.scale} id={obj.id} />
+          <PolaroidPhoto
+            url={obj.url}
+            position={obj.pos}
+            rotation={obj.rot}
+            scale={obj.scale}
+            id={obj.id}
+            shouldLoad={index < loadedCount}
+          />
+
+          {/* Year Label - Only show for the first photo of each year */}
+          {obj.data.year && (index === 0 || photoObjects[index - 1].data.year !== obj.data.year) && (
+            <group position={[0, 0.65, 0.05]}>
+              {/* Shadow Layer */}
+              <Text
+                position={[0.01, -0.01, -0.01]} // Slight offset for drop shadow
+                fontSize={0.18}
+                maxWidth={1.2} // Allow full width
+                color="#000000"
+                font="/fonts/Cinzel-Bold.ttf"
+                characters="0123456789-"
+                anchorX="center"
+                anchorY="bottom"
+                fillOpacity={0.5}
+              >
+                {`${obj.data.year}-${obj.data.month}`}
+              </Text>
+              {/* Main Text Layer */}
+              <Text
+                fontSize={0.18} // Very small
+                maxWidth={1.2}
+                color="#ffd700" // Gold
+                font="/fonts/Cinzel-Bold.ttf"
+                characters="0123456789-"
+                anchorX="center"
+                anchorY="bottom"
+                fillOpacity={state === 'FORMED' ? 1 : 0.9}
+                outlineWidth={0} // No outline
+              >
+                {`${obj.data.year}-${obj.data.month}`}
+              </Text>
+            </group>
+          )
+          }
         </group>
       ))}
+
+      {/* Time Line Connection (Only visible in FORMED state) */}
+      {state === 'FORMED' && (
+        <Line
+          points={photoObjects.map(obj => new THREE.Vector3(...obj.data.treePos))}
+          color="#ffd700"
+          opacity={0.3}
+          transparent
+          lineWidth={1}
+        />
+      )}
     </group>
   );
 };

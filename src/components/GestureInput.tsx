@@ -25,6 +25,7 @@ const GestureInput: React.FC = () => {
 
   const dwellTimerRef = useRef<number>(0);
   const lastFrameTimeRef = useRef<number>(0);
+  const clickCooldownRef = useRef<number>(0);
 
   // 记录上一帧手掌中心位置，用于计算位移差
   const lastPalmPos = useRef<{ x: number, y: number } | null>(null);
@@ -39,39 +40,56 @@ const GestureInput: React.FC = () => {
     return tipDist > mcpDist * 1.3;
   };
 
+  const isPinching = (landmarks: NormalizedLandmark[]) => {
+    const thumbTip = landmarks[4];
+    const indexTip = landmarks[8];
+    const distance = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+    return distance < 0.05; // Threshold for pinch
+  };
+
   useEffect(() => {
     let mounted = true;
     const setupMediaPipe = async () => {
       try {
-        const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
-        );
-        if (!mounted) return;
-        recognizerRef.current = await GestureRecognizer.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
-            delegate: "GPU"
-          },
-          runningMode: "VIDEO",
-          numHands: 2
+        // 1. Start Camera Access (Parallel)
+        const streamPromise = navigator.mediaDevices.getUserMedia({
+          video: { width: 320, height: 240, frameRate: { ideal: 30 } }
         });
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: { width: 320, height: 240, frameRate: { ideal: 30 } }
+
+        // 2. Start MediaPipe Loading (Parallel)
+        const recognizerPromise = (async () => {
+          const vision = await FilesetResolver.forVisionTasks(
+            "/wasm"
+          );
+          return GestureRecognizer.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: "/models/gesture_recognizer.task",
+              delegate: "GPU"
+            },
+            runningMode: "VIDEO",
+            numHands: 2
           });
-          if (videoRef.current && mounted) {
-            videoRef.current.srcObject = stream;
-            videoRef.current.onloadedmetadata = () => {
-              videoRef.current?.play();
-              if (canvasRef.current && videoRef.current) {
-                canvasRef.current.width = videoRef.current.videoWidth;
-                canvasRef.current.height = videoRef.current.videoHeight;
-              }
-              setLoading(false);
-              lastFrameTimeRef.current = Date.now();
-              predictWebcam();
-            };
-          }
+        })();
+
+        // 3. Wait for both to complete
+        const [stream, recognizer] = await Promise.all([streamPromise, recognizerPromise]);
+
+        if (!mounted) return;
+
+        recognizerRef.current = recognizer;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.onloadedmetadata = () => {
+            videoRef.current?.play();
+            if (canvasRef.current && videoRef.current) {
+              canvasRef.current.width = videoRef.current.videoWidth;
+              canvasRef.current.height = videoRef.current.videoHeight;
+            }
+            setLoading(false);
+            lastFrameTimeRef.current = Date.now();
+            predictWebcam();
+          };
         }
       } catch (error) {
         console.error("Error initializing MediaPipe:", error);
@@ -111,6 +129,7 @@ const GestureInput: React.FC = () => {
         let currentPointer = null;
         let isPointing = false;
         let isPanning = false;
+        let isZooming = false;
 
         if (results.landmarks && results.landmarks.length > 0) {
           const landmarks = results.landmarks[0];
@@ -137,7 +156,10 @@ const GestureInput: React.FC = () => {
           }
           lastPalmPos.current = { x: palmX, y: palmY };
 
-          const isMoving = Math.abs(dx) > 0.003 || Math.abs(dy) > 0.003;
+          lastPalmPos.current = { x: palmX, y: palmY };
+
+          // Relaxed movement threshold to 0.005 (was 0.003) to improve dwell stability
+          const isMoving = Math.abs(dx) > 0.005 || Math.abs(dy) > 0.005;
 
           // 如果是单指指向，打断"蓄力"状态
           if (isPointing) {
@@ -152,7 +174,11 @@ const GestureInput: React.FC = () => {
               if (lastHandScale.current !== null) {
                 const deltaScale = currentScale - lastHandScale.current;
                 if (Math.abs(deltaScale) > 0.002) {
-                  setZoomOffset(prev => prev - deltaScale * 150.0);
+                  setZoomOffset(prev => {
+                    const next = prev - deltaScale * 150.0;
+                    return Math.max(-20, Math.min(next, 40));
+                  });
+                  isZooming = true;
                 }
               }
               lastHandScale.current = currentScale;
@@ -176,24 +202,40 @@ const GestureInput: React.FC = () => {
             lastHandScale.current = null;
           }
 
-          // --- 逻辑分支 2: 单指光标 ---
-          if (!isPanning && currentState === 'CHAOS' && isPointing) {
+          // --- 逻辑分支 2: 单指光标 & 点击 (Dwell or Pinch) ---
+          const pinch = isPinching(landmarks);
+
+          if (!isPanning && currentState === 'CHAOS' && (isPointing || pinch)) {
             const indexTip = landmarks[8];
             currentPointer = { x: 1.0 - indexTip.x, y: indexTip.y };
 
-            dwellTimerRef.current += delta;
+            // Pinch Click (Immediate)
+            if (pinch) {
+              if (dwellTimerRef.current === 0) { // Prevent rapid fire
+                setClickTrigger(Date.now());
+                detectedColor = "rgba(255, 0, 0, 1.0)"; // Red for click
+                dwellTimerRef.current = -0.5; // Cooldown
+              } else if (dwellTimerRef.current < 0) {
+                dwellTimerRef.current += delta; // Recover from cooldown
+                if (dwellTimerRef.current > 0) dwellTimerRef.current = 0;
+              }
+            }
+            // Dwell Click (Hover)
+            else {
+              dwellTimerRef.current += delta;
+              const DWELL_THRESHOLD = 0.6; // Faster threshold
+              const progress = Math.min(dwellTimerRef.current / DWELL_THRESHOLD, 1.0);
+              setHoverProgress(progress);
 
-            const DWELL_THRESHOLD = 1.0;
-            const progress = Math.min(dwellTimerRef.current / DWELL_THRESHOLD, 1.0);
-            setHoverProgress(progress);
-
-            if (dwellTimerRef.current >= DWELL_THRESHOLD) {
-              setClickTrigger(Date.now());
-              dwellTimerRef.current = 0;
-              setHoverProgress(0);
-              detectedColor = "rgba(0, 255, 0, 1.0)";
-            } else {
-              detectedColor = "rgba(0, 255, 255, 0.8)";
+              if (dwellTimerRef.current >= DWELL_THRESHOLD) {
+                setClickTrigger(Date.now());
+                clickCooldownRef.current = 0.5; // Lock pointer for 0.5s after click
+                dwellTimerRef.current = 0;
+                setHoverProgress(0);
+                detectedColor = "rgba(0, 255, 0, 1.0)";
+              } else {
+                detectedColor = "rgba(0, 255, 255, 0.8)";
+              }
             }
           } else if (!isPanning) {
             dwellTimerRef.current = 0;
@@ -215,7 +257,8 @@ const GestureInput: React.FC = () => {
               if (currentState === 'FORMED' && name === 'Open_Palm') {
                 // 只要上一个稳定手势是 Closed_Fist，就允许炸开，即使有轻微移动
                 // 这样解决了用户反馈的"从拳头展开5个手指，圣诞树不会炸开"的问题
-                if (gestureStreak.current.lastStable === 'Closed_Fist') {
+                // 关键修复：必须没有在缩放 (isZooming) 且没有大幅移动 (isMoving)
+                if (gestureStreak.current.lastStable === 'Closed_Fist' && !isZooming && !isMoving) {
                   targetState = 'CHAOS';
                 }
               } else if (name === 'Closed_Fist') {
@@ -303,7 +346,10 @@ const GestureInput: React.FC = () => {
               // 距离变小 -> Zoom Out (TargetZ 增大) -> delta < 0 -> zoomOffset 增大
               // 灵敏度调整: 80.0 -> 60.0 (稍微降低以提升平滑度)
               if (Math.abs(delta) > 0.005) {
-                setZoomOffset(prev => prev - delta * 60.0);
+                setZoomOffset(prev => {
+                  const next = prev - delta * 60.0;
+                  return Math.max(-20, Math.min(next, 40));
+                });
                 detectedColor = "rgba(255, 0, 255, 0.8)"; // 紫色表示缩放
               }
             }
@@ -315,8 +361,15 @@ const GestureInput: React.FC = () => {
         } else {
           dwellTimerRef.current = 0;
           setHoverProgress(0);
-          setPointer(null);
-          lastPalmPos.current = null;
+
+          if (clickCooldownRef.current > 0) {
+            clickCooldownRef.current -= delta;
+            // Keep the last pointer if cooling down
+          } else {
+            setPointer(null);
+            lastPalmPos.current = null;
+          }
+
           // 手势丢失，重置所有状态
           gestureStreak.current = { name: null, count: 0, lastStable: null };
         }
