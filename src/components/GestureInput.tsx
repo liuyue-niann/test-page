@@ -229,7 +229,7 @@ const GestureInput: React.FC = () => {
 
               if (dwellTimerRef.current >= DWELL_THRESHOLD) {
                 setClickTrigger(Date.now());
-                clickCooldownRef.current = 0.5; // Lock pointer for 0.5s after click
+                clickCooldownRef.current = 1.5; // Increase cooldown to 1.5s to prevent double-click/auto-close
                 dwellTimerRef.current = 0;
                 setHoverProgress(0);
                 detectedColor = "rgba(0, 255, 0, 1.0)";
@@ -255,10 +255,10 @@ const GestureInput: React.FC = () => {
 
               let targetState = null;
               if (currentState === 'FORMED' && name === 'Open_Palm') {
-                // 只要上一个稳定手势是 Closed_Fist，就允许炸开，即使有轻微移动
-                // 这样解决了用户反馈的"从拳头展开5个手指，圣诞树不会炸开"的问题
-                // 关键修复：必须没有在缩放 (isZooming) 且没有大幅移动 (isMoving)
-                if (gestureStreak.current.lastStable === 'Closed_Fist' && !isZooming && !isMoving) {
+                // 只要上一个稳定手势是 Closed_Fist，就允许炸开
+                // 移除 !isMoving 限制，因为张手时难免会有微动
+                // 移除 !isZooming 限制，优先响应炸开
+                if (gestureStreak.current.lastStable === 'Closed_Fist') {
                   targetState = 'CHAOS';
                 }
               } else if (name === 'Closed_Fist') {
@@ -277,9 +277,9 @@ const GestureInput: React.FC = () => {
               }
 
               // 阈值调整：
-              // Closed_Fist (成树) 可以慢一点，防误触 -> 15帧
-              // Open_Palm (炸开) 需要快一点，响应用户需求 -> 5帧
-              const threshold = name === 'Open_Palm' ? 5 : 15;
+              // Closed_Fist (成树) 保持 15帧以防误触
+              // Open_Palm (炸开) 降低到 3帧 (极速响应)
+              const threshold = name === 'Open_Palm' ? 3 : 15;
 
               if (gestureStreak.current.count > threshold) {
                 if (name === "Open_Palm" && currentState === 'FORMED') {

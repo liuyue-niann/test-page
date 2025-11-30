@@ -214,23 +214,19 @@ const TreeSystem: React.FC = () => {
       const treeY = h;
       const treeZ = Math.sin(angle) * radius;
 
-      // --- CHAOS: Nebula Cloud Layout ---
-      // 椭球体分布: X宽, Y高, Z深
-      // 保持时间顺序: 旧照片在外/下，新照片在内/上 (大致)
-      // 使用球坐标系随机分布，但受时间 t 影响半径
+      // --- CHAOS: Fibonacci Sphere Layout (Even Distribution) ---
+      // 使用斐波那契球体分布，确保照片均匀分布，减少重叠
 
-      // 半径分布: 越新的越靠近中心 (t=1 -> r=5, t=0 -> r=15)
-      const nebulaRadius = 5 + (1 - t) * 10 + (Math.random() - 0.5) * 4;
+      // 黄金角度
+      const phi = Math.acos(1 - 2 * (i + 0.5) / photoCount);
+      const theta = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5);
 
-      // 角度分布: 随机，但限制在正面扇区 (-60度 到 +60度) 以便展示? 不，全景星云更好
-      // 既然要求"正面漏出来"，我们限制 Z 轴主要为负 (在相机前方) 或 随机分布但朝向相机
-      // 方案: 随机分布在前方半球
-      const theta = (Math.random() - 0.5) * Math.PI * 1.5; // 水平角度 -135 到 135
-      const phi = (Math.random() - 0.5) * Math.PI * 0.8; // 垂直角度
+      // 基础半径 (稍微随机化一点，避免完全在一个球面上)
+      const r = 12 + Math.random() * 4;
 
-      const chaosX = Math.sin(theta) * Math.cos(phi) * nebulaRadius * 1.5; // X轴拉宽
-      const chaosY = Math.sin(phi) * nebulaRadius * 0.8; // Y轴压扁
-      const chaosZ = Math.cos(theta) * Math.cos(phi) * nebulaRadius * 0.5; // Z轴压缩 (扁平星云)
+      const chaosX = r * Math.sin(phi) * Math.cos(theta);
+      const chaosY = r * Math.sin(phi) * Math.sin(theta) * 0.6; // Y轴压扁一点，形成椭球
+      const chaosZ = r * Math.cos(phi);
 
       const imageUrl = `/photos/${fileName}`;
 
@@ -261,8 +257,31 @@ const TreeSystem: React.FC = () => {
 
   // --- 处理点击事件 ---
   // --- 处理点击事件 (Screen-Space Distance Selection) ---
+  const photoOpenTimeRef = useRef<number>(0);
+
   useEffect(() => {
-    if (state === 'CHAOS' && pointer && !selectedPhotoUrl) {
+    if (state === 'CHAOS' && pointer) {
+      // 如果已经有选中的照片，检查是否需要关闭
+      if (selectedPhotoUrl) {
+        // 检查锁定时间 (2秒)
+        if (Date.now() - photoOpenTimeRef.current < 2000) {
+          return; // 锁定期间禁止关闭
+        }
+
+        // 点击任意位置关闭 (除了照片本身，但这里简化为再次点击关闭)
+        // 实际上 App.tsx 里的 PhotoModal 遮罩层点击也会触发 setSelectedPhotoUrl(null)
+        // 这里主要处理点击"空地"的情况
+
+        // 重新计算是否点到了照片 (为了避免误触关闭)
+        // 但根据需求"单指照片可以精准选中并关闭了"，说明用户希望点击照片也能关闭?
+        // 现在的逻辑是: 如果有点到照片 -> 切换; 如果没点到 -> 关闭
+
+        // 让我们简化逻辑: 只要过了2秒，点击任何地方都尝试关闭或切换
+        // 但为了防止误触，我们还是检测一下
+
+        // ... (保持原有检测逻辑，但增加关闭逻辑)
+      }
+
       // 1. 转换 Pointer 到 NDC (-1 to 1)
       const ndcX = pointer.x * 2 - 1;
       const ndcY = -(pointer.y * 2) + 1;
@@ -270,7 +289,7 @@ const TreeSystem: React.FC = () => {
       // 2. 遍历所有照片，计算屏幕空间距离
       let closestPhotoId: string | null = null;
       let minDistance = Infinity;
-      const SELECTION_THRESHOLD = 0.15; // 屏幕占比阈值 (约 15%)
+      const SELECTION_THRESHOLD = 0.05; // Reduced from 0.15 to 0.05 for higher precision
 
       photoObjects.forEach(obj => {
         if (!obj.ref.current) return;
@@ -287,11 +306,6 @@ const TreeSystem: React.FC = () => {
           // 计算 NDC 距离
           const dist = Math.hypot(screenPos.x - ndcX, screenPos.y - ndcY);
 
-          // 优先选择更近的 (距离更小) 且在阈值内
-          // 增加深度权重: 离相机越近 (screenPos.z 越小) 越容易被选中
-          // screenPos.z 在 frustum 内是 0~1 (linear depth approx)
-          // 修正: project 后的 z 不是线性深度，但可以用来判断相对前后
-          // 简单起见，我们只看 2D 距离，如果重叠严重再考虑深度
           if (dist < SELECTION_THRESHOLD && dist < minDistance) {
             minDistance = dist;
             closestPhotoId = obj.data.image!;
@@ -300,13 +314,24 @@ const TreeSystem: React.FC = () => {
       });
 
       if (closestPhotoId) {
-        setSelectedPhotoUrl(closestPhotoId);
+        // 如果点击的是当前照片，且过了锁定时间 -> 关闭
+        if (selectedPhotoUrl === closestPhotoId) {
+          if (Date.now() - photoOpenTimeRef.current > 2000) {
+            setSelectedPhotoUrl(null);
+          }
+        } else {
+          // 选中新照片
+          setSelectedPhotoUrl(closestPhotoId);
+          photoOpenTimeRef.current = Date.now(); // 记录打开时间
+        }
       } else if (selectedPhotoUrl) {
-        // Clicked on empty space -> Close photo
-        setSelectedPhotoUrl(null);
+        // Clicked on empty space -> Close photo (if not locked)
+        if (Date.now() - photoOpenTimeRef.current > 2000) {
+          setSelectedPhotoUrl(null);
+        }
       }
     }
-  }, [clickTrigger, selectedPhotoUrl]);
+  }, [clickTrigger]); // Remove selectedPhotoUrl dependency to avoid double-firing loop
 
   // --- Animation Loop ---
   useFrame((state3d, delta) => {
