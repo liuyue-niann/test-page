@@ -2,7 +2,9 @@ import React, { useState, Suspense, useContext, useEffect, useRef } from 'react'
 import { TreeContextType, AppState, TreeContext, PointerCoords } from './types';
 import Experience from './components/Experience';
 import GestureInput from './components/GestureInput';
+import TechEffects from './components/TechEffects';
 import { AnimatePresence, motion } from 'framer-motion';
+
 
 // --- 梦幻光标组件 ---
 const DreamyCursor: React.FC<{ pointer: PointerCoords | null, progress: number }> = ({ pointer, progress }) => {
@@ -73,11 +75,13 @@ const PhotoModal: React.FC<{ url: string | null, onClose: () => void }> = ({ url
                 animate={{ scale: 1, y: 0, rotate: 0 }}
                 exit={{ scale: 0.5, opacity: 0, y: 100 }}
                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                className="relative max-w-4xl max-h-full bg-white p-3 rounded shadow-[0_0_50px_rgba(255,255,255,0.2)] border-8 border-white"
+                className="relative max-w-4xl max-h-full bg-white p-3 rounded shadow-[0_0_50px_rgba(255,215,0,0.3)] border-8 border-white"
                 onClick={(e) => e.stopPropagation()}
             >
                 <img src={url} alt="Memory" className="max-h-[80vh] object-contain rounded shadow-inner" />
-                <div className="absolute -bottom-12 w-full text-center text-white/50 cinzel text-sm">Tap image or background to close</div>
+                <div className="absolute -bottom-12 w-full text-center text-red-300/70 cinzel text-sm">
+                    ❄️ Precious Moment ❄️ Tap to close
+                </div>
             </motion.div>
         </motion.div>
     );
@@ -101,37 +105,37 @@ const AppContent: React.FC = () => {
 
     return (
         <main className="relative w-full h-screen bg-black text-white overflow-hidden cursor-none">
-            <div className="absolute inset-0 z-0">
-                <Suspense fallback={<div className="flex items-center justify-center h-full text-emerald-500 cinzel animate-pulse">Loading Experience...</div>}>
+            {/* 摄像头背景层 (z-0) */}
+            {webcamEnabled && <GestureInput />}
+
+            {/* 3D 场景层 (z-10) */}
+            <div className="absolute inset-0 z-10">
+                <Suspense fallback={<div className="flex items-center justify-center h-full text-red-400 cinzel animate-pulse text-2xl">🎄 Loading Christmas Magic... ❄️</div>}>
                     <Experience />
                 </Suspense>
             </div>
 
-            <div className="absolute inset-0 z-10 pointer-events-none flex flex-col justify-between p-8">
+            {/* 科技感特效层 (z-20) */}
+            {webcamEnabled && <TechEffects />}
+
+            {/* UI 层 (z-30) */}
+            <div className="absolute inset-0 z-30 pointer-events-none flex flex-col justify-between p-8">
                 <header className="flex justify-between items-start">
                     <div>
-                        <h1 className="text-4xl md:text-6xl font-bold cinzel text-transparent bg-clip-text bg-gradient-to-r from-emerald-200 to-amber-100 drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]">NOËL VORTEX</h1>
-                        <p className="text-emerald-400/80 cinzel tracking-widest text-sm mt-2">
-                            {state === 'CHAOS' ? 'CHAOS MODE // PAN & EXPLORE' : 'FORMED MODE // OBSERVE'}
+                        <h1 className="text-4xl md:text-6xl font-bold cinzel text-transparent bg-clip-text bg-gradient-to-r from-red-300 via-green-200 to-amber-100 drop-shadow-[0_0_20px_rgba(255,255,255,0.5)]">
+                            🎄 CHRISTMAS MEMORIES ❄️
+                        </h1>
+                        <p className="text-red-400/80 cinzel tracking-widest text-sm mt-2">
+                            {state === 'CHAOS' ? '✨ SCATTERED MEMORIES // EXPLORE YOUR JOURNEY ✨' : '🎁 MEMORY TREE // TIMELINE OF LOVE 🎁'}
                         </p>
                     </div>
-                    <div className="flex gap-4 pointer-events-auto">
-                        <button onClick={() => setWebcamEnabled(!webcamEnabled)} className="px-4 py-2 border border-emerald-500/30 rounded text-xs cinzel tracking-widest bg-black/50 text-emerald-200 hover:bg-emerald-900/30 transition-colors">
-                            {webcamEnabled ? 'CAMERA ON' : 'CAMERA OFF'}
-                        </button>
-                    </div>
                 </header>
-
-                <div className="w-full flex justify-between items-end">
-                    {/* 容器不需要额外样式，GestureInput 内部自带尺寸 */}
-                    <div className="pointer-events-auto">
-                        {webcamEnabled && <GestureInput />}
-                    </div>
-                </div>
             </div>
 
+            {/* 光标层 (z-200) */}
             <DreamyCursor pointer={pointer} progress={hoverProgress} />
 
+            {/* 弹窗层 (z-100) */}
             <AnimatePresence>
                 {selectedPhotoUrl && <PhotoModal url={selectedPhotoUrl} onClose={() => setSelectedPhotoUrl(null)} />}
             </AnimatePresence>

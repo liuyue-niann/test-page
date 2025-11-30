@@ -125,7 +125,7 @@ const GestureInput: React.FC = () => {
         const results = recognizer.recognizeForVideo(video, Date.now());
         const ctx = canvas.getContext("2d");
 
-        let detectedColor = "rgba(255, 255, 255, 0.2)";
+        let detectedColor = "rgba(0, 255, 255, 0.2)"; // 默认霓虹青色，降低透明度
         let currentPointer = null;
         let isPointing = false;
         let isPanning = false;
@@ -143,6 +143,8 @@ const GestureInput: React.FC = () => {
 
           isPointing = indexExtended && !middleExtended && !ringExtended && !pinkyExtended;
           const isFiveFingers = indexExtended && middleExtended && ringExtended && pinkyExtended && thumbExtended;
+          // 两指检测（食指+中指伸出，无名指和小指收拢）- 用于平移
+          const isTwoFingers = indexExtended && middleExtended && !ringExtended && !pinkyExtended;
 
           // 全局更新手掌位置 (无论什么手势，只要有手就追踪，防止 flickering 导致 dx 丢失)
           const palmX = (landmarks[0].x + landmarks[5].x + landmarks[17].x) / 3;
@@ -168,32 +170,49 @@ const GestureInput: React.FC = () => {
 
           // --- 逻辑分支 1: 单手控制 (平移/缩放/旋转) ---
           if (results.landmarks.length === 1) {
-            // 1.1 单手缩放 (全状态生效)
-            if (isFiveFingers) {
+            // 1.1 单手缩放 (五指张开，仅在 CHAOS 状态下生效，避免与状态切换冲突)
+            // 动作快则缩放快，增强操纵感
+            if (isFiveFingers && currentState === 'CHAOS') {
               const currentScale = Math.hypot(wrist.x - landmarks[9].x, wrist.y - landmarks[9].y);
               if (lastHandScale.current !== null) {
                 const deltaScale = currentScale - lastHandScale.current;
-                if (Math.abs(deltaScale) > 0.002) {
-                  setZoomOffset(prev => {
-                    const next = prev - deltaScale * 150.0;
-                    return Math.max(-20, Math.min(next, 40));
-                  });
-                  isZooming = true;
-                }
+                // 移除阈值，使用非线性映射增强快速动作的响应
+                // deltaScale 越大，缩放越快（平方关系增强差异）
+                const speed = Math.abs(deltaScale);
+                const amplifiedDelta = Math.sign(deltaScale) * speed * (1 + speed * 50);
+
+                setZoomOffset(prev => {
+                  const next = prev - amplifiedDelta * 200.0;
+                  return Math.max(-20, Math.min(next, 40));
+                });
+                if (speed > 0.001) isZooming = true;
               }
               lastHandScale.current = currentScale;
             } else {
               lastHandScale.current = null;
             }
 
-            // 1.2 单手平移 (仅 CHAOS 且未打开照片)
-            if (currentState === 'CHAOS' && !isPhotoOpen && isFiveFingers) {
+            // 1.2 两指平移 (任何状态下都可以，但未打开照片时)
+            // 圣诞树树根直接跟随两指中点位置
+            if (!isPhotoOpen && isTwoFingers) {
               isPanning = true;
-              setPanOffset(prev => ({
-                x: prev.x + dx * 15,
-                y: prev.y - dy * 15
-              }));
-              detectedColor = "rgba(255, 215, 0, 0.8)"; // 金色
+
+              // 计算食指和中指尖端的中点
+              const indexTip = landmarks[8];
+              const middleTip = landmarks[12];
+              const centerX = (indexTip.x + middleTip.x) / 2;
+              const centerY = (indexTip.y + middleTip.y) / 2;
+
+              // 将归一化坐标 (0-1) 转换为以屏幕中心为原点的坐标 (-0.5 到 0.5)
+              // 然后乘以系数映射到世界坐标
+              // x 轴镜像（因为摄像头是镜像的）
+              const worldX = (0.5 - centerX) * 20;  // 左右范围 -10 到 10
+              const worldY = (0.5 - centerY) * 12;  // 上下范围 -6 到 6
+
+              // 直接设置位置（绝对跟随）
+              setPanOffset({ x: worldX, y: worldY });
+
+              detectedColor = "rgba(0, 255, 200, 0.9)";
               dwellTimerRef.current = 0;
               setHoverProgress(0);
             }
@@ -205,7 +224,8 @@ const GestureInput: React.FC = () => {
           // --- 逻辑分支 2: 单指光标 & 点击 (Dwell or Pinch) ---
           const pinch = isPinching(landmarks);
 
-          if (!isPanning && currentState === 'CHAOS' && (isPointing || pinch)) {
+          // 确保只有单指指向时才能点击，排除五指张开、两指等其他手势
+          if (!isPanning && !isFiveFingers && !isTwoFingers && currentState === 'CHAOS' && (isPointing || pinch)) {
             const indexTip = landmarks[8];
             currentPointer = { x: 1.0 - indexTip.x, y: indexTip.y };
 
@@ -213,7 +233,7 @@ const GestureInput: React.FC = () => {
             if (pinch) {
               if (dwellTimerRef.current === 0) { // Prevent rapid fire
                 setClickTrigger(Date.now());
-                detectedColor = "rgba(255, 0, 0, 1.0)"; // Red for click
+                detectedColor = "rgba(0, 255, 255, 1.0)"; // 霓虹青色点击
                 dwellTimerRef.current = -0.5; // Cooldown
               } else if (dwellTimerRef.current < 0) {
                 dwellTimerRef.current += delta; // Recover from cooldown
@@ -223,18 +243,18 @@ const GestureInput: React.FC = () => {
             // Dwell Click (Hover)
             else {
               dwellTimerRef.current += delta;
-              const DWELL_THRESHOLD = 0.6; // Faster threshold
+              const DWELL_THRESHOLD = 1.2; // 增加到 1.2 秒，防止误触
               const progress = Math.min(dwellTimerRef.current / DWELL_THRESHOLD, 1.0);
               setHoverProgress(progress);
 
               if (dwellTimerRef.current >= DWELL_THRESHOLD) {
                 setClickTrigger(Date.now());
-                clickCooldownRef.current = 1.5; // Increase cooldown to 1.5s to prevent double-click/auto-close
+                clickCooldownRef.current = 2.0; // 增加冷却到 2 秒
                 dwellTimerRef.current = 0;
                 setHoverProgress(0);
-                detectedColor = "rgba(0, 255, 0, 1.0)";
+                detectedColor = "rgba(100, 255, 255, 1.0)"; // 亮青色完成
               } else {
-                detectedColor = "rgba(0, 255, 255, 0.8)";
+                detectedColor = "rgba(0, 255, 255, 0.8)"; // 霓虹青色悬停
               }
             }
           } else if (!isPanning) {
@@ -249,18 +269,14 @@ const GestureInput: React.FC = () => {
             const score = gesture.score;
 
             if (score > 0.6) {
-              // 状态切换逻辑
-              // 1. FORMED -> CHAOS (Open_Palm) - 必须是组合手势：先握拳 (Closed_Fist) -> 再张开 (Open_Palm)
-              // 2. CHAOS -> FORMED (Closed_Fist)
+              // 状态切换逻辑（简化版）
+              // 1. FORMED -> CHAOS: 五指张开(Open_Palm)静止即可炸开
+              // 2. CHAOS -> FORMED: 握拳(Closed_Fist)
 
               let targetState = null;
-              if (currentState === 'FORMED' && name === 'Open_Palm') {
-                // 只要上一个稳定手势是 Closed_Fist，就允许炸开
-                // 移除 !isMoving 限制，因为张手时难免会有微动
-                // 移除 !isZooming 限制，优先响应炸开
-                if (gestureStreak.current.lastStable === 'Closed_Fist') {
-                  targetState = 'CHAOS';
-                }
+              if (currentState === 'FORMED' && name === 'Open_Palm' && !isMoving) {
+                // 五指张开且静止 -> 炸开（不再需要先握拳）
+                targetState = 'CHAOS';
               } else if (name === 'Closed_Fist') {
                 targetState = 'FORMED';
               }
@@ -272,28 +288,21 @@ const GestureInput: React.FC = () => {
                   gestureStreak.current = { ...gestureStreak.current, name: name, count: 1 };
                 }
               } else {
-                // 如果正在移动或者手势变了，重置计数，但保留 lastStable
                 gestureStreak.current = { ...gestureStreak.current, name: null, count: 0 };
               }
 
               // 阈值调整：
-              // Closed_Fist (成树) 保持 15帧以防误触
-              // Open_Palm (炸开) 降低到 3帧 (极速响应)
-              const threshold = name === 'Open_Palm' ? 3 : 15;
+              // Closed_Fist (收拢) 保持 10帧
+              // Open_Palm (炸开) 保持 15帧（静止约0.4秒）
+              const threshold = name === 'Open_Palm' ? 15 : 10;
 
               if (gestureStreak.current.count > threshold) {
                 if (name === "Open_Palm" && currentState === 'FORMED') {
                   setState("CHAOS");
-                  // 触发后重置 lastStable，防止重复触发
-                  gestureStreak.current.lastStable = null;
                 }
                 else if (name === "Closed_Fist") {
                   setState("FORMED");
-                  // 记录稳定手势为 Closed_Fist
-                  gestureStreak.current.lastStable = 'Closed_Fist';
                 }
-
-                // 触发状态切换后重置计数
                 gestureStreak.current = { ...gestureStreak.current, name: null, count: 0 };
               }
             } else {
@@ -312,7 +321,7 @@ const GestureInput: React.FC = () => {
                     const newBoost = prev - dx * 8.0; // 增加灵敏度 5.0 -> 8.0, 方向反转
                     return Math.max(Math.min(newBoost, 3.0), -3.0); // 稍微放宽上限
                   });
-                  detectedColor = "rgba(255, 215, 0, 0.8)";
+                  detectedColor = "rgba(0, 200, 255, 0.9)"; // 霓虹蓝青色旋转
 
                   // 关键：如果正在旋转（移动），且上一个状态不是拳头，则打断"蓄力"状态
                   // 如果是拳头，保留状态以便触发炸开
@@ -332,6 +341,7 @@ const GestureInput: React.FC = () => {
           }
 
           // --- 逻辑分支 4: 双手缩放 (全状态生效) ---
+          // 动作快则缩放快，增强操纵感
           if (results.landmarks.length === 2) {
             const hand1 = results.landmarks[0][0]; // Wrist of hand 1
             const hand2 = results.landmarks[1][0]; // Wrist of hand 2
@@ -342,15 +352,16 @@ const GestureInput: React.FC = () => {
             if (lastHandDistance.current !== null) {
               const delta = dist - lastHandDistance.current;
 
-              // 距离变大 -> Zoom In (TargetZ 减小) -> delta > 0 -> zoomOffset 减小
-              // 距离变小 -> Zoom Out (TargetZ 增大) -> delta < 0 -> zoomOffset 增大
-              // 灵敏度调整: 80.0 -> 60.0 (稍微降低以提升平滑度)
-              if (Math.abs(delta) > 0.005) {
-                setZoomOffset(prev => {
-                  const next = prev - delta * 60.0;
-                  return Math.max(-20, Math.min(next, 40));
-                });
-                detectedColor = "rgba(255, 0, 255, 0.8)"; // 紫色表示缩放
+              // 使用非线性映射增强快速动作的响应
+              const speed = Math.abs(delta);
+              const amplifiedDelta = Math.sign(delta) * speed * (1 + speed * 30);
+
+              setZoomOffset(prev => {
+                const next = prev - amplifiedDelta * 100.0;
+                return Math.max(-20, Math.min(next, 40));
+              });
+              if (speed > 0.002) {
+                detectedColor = "rgba(150, 255, 255, 0.9)";
               }
             }
             lastHandDistance.current = dist;
@@ -378,24 +389,30 @@ const GestureInput: React.FC = () => {
 
         if (ctx) {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
-          if (results.landmarks && results.landmarks.length > 0) {
-            const landmarks = results.landmarks[0];
-            const drawingUtils = new DrawingUtils(ctx);
+          // 注释：暂时隐藏手部骨骼线，保持简洁
+          // if (results.landmarks && results.landmarks.length > 0) {
+          //   const landmarks = results.landmarks[0];
+          //   const drawingUtils = new DrawingUtils(ctx);
 
-            for (const landmarks of results.landmarks) {
-              drawingUtils.drawConnectors(landmarks, GestureRecognizer.HAND_CONNECTIONS, { color: detectedColor, lineWidth: 2 });
-              drawingUtils.drawLandmarks(landmarks, { color: "rgba(255, 255, 255, 0.5)", lineWidth: 1, radius: 2 });
-            }
+          //   for (const landmarks of results.landmarks) {
+          //     drawingUtils.drawConnectors(landmarks, GestureRecognizer.HAND_CONNECTIONS, { color: detectedColor, lineWidth: 1 });
+          //     drawingUtils.drawLandmarks(landmarks, { color: "rgba(0, 255, 255, 0.3)", lineWidth: 0.5, radius: 1.5 });
+          //   }
 
-            if (currentPointer) {
-              const indexTip = landmarks[8];
-              ctx.beginPath();
-              ctx.arc(indexTip.x * canvas.width, indexTip.y * canvas.height, 8, 0, 2 * Math.PI);
-              ctx.strokeStyle = "#00FFFF";
-              ctx.lineWidth = 2;
-              ctx.stroke();
-            }
-          }
+          //   if (currentPointer) {
+          //     const indexTip = landmarks[8];
+          //     ctx.beginPath();
+          //     ctx.arc(indexTip.x * canvas.width, indexTip.y * canvas.height, 6, 0, 2 * Math.PI);
+          //     ctx.strokeStyle = "#00FFFF";
+          //     ctx.lineWidth = 2;
+          //     ctx.stroke();
+          //     // 添加轻微发光效果
+          //     ctx.shadowBlur = 8;
+          //     ctx.shadowColor = "#00FFFF";
+          //     ctx.stroke();
+          //     ctx.shadowBlur = 0;
+          //   }
+          // }
         }
       }
     }
@@ -403,25 +420,33 @@ const GestureInput: React.FC = () => {
   };
 
   return (
-    // 尺寸放大：w-64 h-48 (原 48x36 -> 192px / 144px，现在 256px / 192px, 再大一倍 w-96 h-72)
-    <div className="relative w-96 h-72 bg-black/80 overflow-hidden rounded-lg border border-white/10 shadow-2xl">
+    // 全屏背景布局 - 最底层
+    <div className="fixed inset-0 w-full h-full z-0">
+      {/* 摄像头视频背景层 */}
       <video
         ref={videoRef}
-        className="absolute inset-0 w-full h-full object-cover opacity-80"
+        className="absolute inset-0 w-full h-full object-cover z-0"
         playsInline
         muted
         autoPlay
         style={{ transform: 'scaleX(-1)' }}
       />
+
+      {/* 半透明黑色遮罩 */}
+      <div className="absolute inset-0 bg-black/70 z-[1]" />
+
+      {/* 手势骨架线画布 */}
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 w-full h-full object-cover"
+        className="absolute inset-0 w-full h-full object-cover z-[2]"
         style={{ transform: 'scaleX(-1)' }}
       />
-      {loading && <div className="absolute inset-0 flex items-center justify-center text-xs text-emerald-500 animate-pulse bg-black/90 z-20 cinzel">SYSTEM INITIALIZING...</div>}
-      <div className="absolute bottom-2 left-3 text-[10px] text-white/50 cinzel z-10">
-        POINT: SELECT | PALM MOVE: PAN | FIST: FORM
-      </div>
+
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center text-2xl text-emerald-500 animate-pulse bg-black/90 z-20 cinzel">
+          SYSTEM INITIALIZING...
+        </div>
+      )}
     </div>
   );
 };

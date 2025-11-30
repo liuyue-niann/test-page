@@ -39,13 +39,13 @@ const ShimmerMaterial = shaderMaterial(
     varying vec2 vUv;
     void main() {
       // 扫光条纹位置，周期性移动
-      float pos = mod(uTime * 0.8, 2.5) - 0.5; 
+      float pos = mod(uTime * 0.8, 2.5) - 0.5;
       // 计算条纹强度 (倾斜)
       float bar = smoothstep(0.0, 0.2, 0.2 - abs(vUv.x + vUv.y * 0.5 - pos));
-      
-      // 基础透明度 0，扫光处透明度高
-      float alpha = bar * 0.15;
-      
+
+      // 基础透明度 0，扫光处透明度降低以减少对照片的影响
+      float alpha = bar * 0.05;
+
       gl_FragColor = vec4(uColor, alpha);
     }
   `
@@ -53,9 +53,10 @@ const ShimmerMaterial = shaderMaterial(
 extend({ ShimmerMaterial });
 
 // --- Photo Component ---
-const PolaroidPhoto: React.FC<{ url: string; position: THREE.Vector3; rotation: THREE.Euler; scale: number; id: string; shouldLoad: boolean }> = ({ url, position, rotation, scale, id, shouldLoad }) => {
+const PolaroidPhoto: React.FC<{ url: string; position: THREE.Vector3; rotation: THREE.Euler; scale: number; id: string; shouldLoad: boolean; year: number }> = ({ url, position, rotation, scale, id, shouldLoad, year }) => {
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
   const [loadStatus, setLoadStatus] = useState<'pending' | 'loading' | 'local' | 'fallback'>('pending');
+
 
   useEffect(() => {
     if (!shouldLoad || loadStatus !== 'pending') return;
@@ -68,12 +69,18 @@ const PolaroidPhoto: React.FC<{ url: string; position: THREE.Vector3; rotation: 
       url,
       (tex) => {
         // 本地照片加载成功
+        tex.colorSpace = THREE.SRGBColorSpace;
         tex.wrapS = THREE.ClampToEdgeWrapping;
         tex.wrapT = THREE.ClampToEdgeWrapping;
-        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.needsUpdate = true;
         setTexture(tex);
         setLoadStatus('local');
-        console.log(`✅ Successfully loaded local image: ${url}`);
+        console.log(`✅ Successfully loaded local image: ${url}`, {
+          width: tex.image?.width,
+          height: tex.image?.height,
+          format: tex.format,
+          type: tex.type
+        });
       },
       undefined, // onProgress
       (error) => {
@@ -85,9 +92,10 @@ const PolaroidPhoto: React.FC<{ url: string; position: THREE.Vector3; rotation: 
         loader.load(
           fallbackUrl,
           (fbTex) => {
+            fbTex.colorSpace = THREE.SRGBColorSpace;
             fbTex.wrapS = THREE.ClampToEdgeWrapping;
             fbTex.wrapT = THREE.ClampToEdgeWrapping;
-            fbTex.colorSpace = THREE.SRGBColorSpace;
+            fbTex.needsUpdate = true;
             setTexture(fbTex);
             setLoadStatus('fallback');
             console.log(`✅ Loaded fallback image for ${url}`);
@@ -102,23 +110,27 @@ const PolaroidPhoto: React.FC<{ url: string; position: THREE.Vector3; rotation: 
   }, [url, id, shouldLoad, loadStatus]);
 
   return (
-    <group position={position} rotation={rotation} scale={scale}>
-      {/* 相框边框 - 本地照片用金色，网络照片用银色 */}
+    <group position={position} rotation={rotation} scale={scale * 1.2}>
+      {/* 相框边框 - 白色边框 */}
       <mesh position={[0, 0, 0]} userData={{ photoId: id, photoUrl: url }}>
         <boxGeometry args={[1, 1.25, 0.02]} />
         <meshStandardMaterial
-          color={loadStatus === 'local' ? '#ffd700' : '#f0f0f0'}
+          color="#ffffff"
           roughness={0.2}
-          metalness={0.5}
+          metalness={0.1}
         />
       </mesh>
-      {/* 照片内容 */}
+      {/* 照片内容 - 方案1: meshStandardMaterial */}
       <mesh position={[0, 0.15, 0.015]} userData={{ photoId: id, photoUrl: url }}>
         <planeGeometry args={[0.9, 0.9]} />
         {texture ? (
-          <meshPhysicalMaterial map={texture} roughness={0.2} clearcoat={1.0} toneMapped={false} />
+          <meshStandardMaterial
+            key={texture.uuid}
+            map={texture}
+            roughness={0.5}
+            metalness={0.0}
+          />
         ) : (
-          // 加载中状态 - 显示深灰色占位符
           <meshStandardMaterial color="#333" />
         )}
       </mesh>
@@ -176,18 +188,19 @@ const TreeSystem: React.FC = () => {
     for (let i = 0; i < lightCount * 3; i++) lightChaos[i] = lSphere[i];
     for (let i = 0; i < lightCount; i++) { const i3 = i * 3; const t = i / lightCount; const h = t * 13; const coneRadius = (14 - h) * 0.48; const angle = t * Math.PI * 25; lightTree[i3] = Math.cos(angle) * coneRadius; lightTree[i3 + 1] = h - 6; lightTree[i3 + 2] = Math.sin(angle) * coneRadius; }
 
-    // 硬编码文件列表 (因为无法在运行时列出目录)
+    // 实际存在的照片文件列表
     const photoFiles = [
-      "2015_02_1.jpg", "2015_02_3.jpg", "2015_05_2.jpg",
-      "2016_02_6.jpg", "2016_05_4.jpg", "2016_11_5.jpg",
-      "2017_06_7.jpg", "2017_10_8.jpg", "2017_10_9.jpg",
-      "2018_03_12.jpg", "2018_08_10.jpg", "2018_08_11.jpg",
-      "2019_06_15.jpg", "2019_07_13.jpg", "2019_11_14.jpg",
-      "2020_01_17.jpg", "2020_05_18.jpg", "2020_07_16.jpg",
-      "2021_02_19.jpg", "2021_05_21.jpg", "2021_11_20.jpg",
-      "2022_03_22.jpg", "2022_07_24.jpg", "2022_08_23.jpg",
-      "2023_02_25.jpg", "2023_07_26.jpg", "2023_10_27.jpg",
-      "2024_05_28.jpg", "2024_07_29.jpg", "2024_10_30.jpg", "2024_11_31.jpg"
+      "2024_06_1.jpg", "2024_07_1.jpg", "2024_07_2.jpg",
+      "2024_09_1.jpg", "2024_09_2.jpg", "2024_09_3.jpg",
+      "2024_09_4.jpg", "2024_09_5.jpg", "2024_09_6.jpg",
+      "2024_10_1.jpg", "2024_11_1.jpg", "2024_12_1.jpg",
+      "2024_12_2.jpg", "2024_12_3.jpg", "2025_01_1.jpg",
+      "2025_01_2.jpg", "2025_01_3.jpg", "2025_01_4.jpg",
+      "2025_01_5.jpg", "2025_01_6.jpg", "2025_01_7.jpg",
+      "2025_02_1.jpg", "2025_05_1.jpg", "2025_06_1.jpg",
+      "2025_06_2.jpg", "2025_06_3.jpg", "2025_09_1.jpg",
+      "2025_10_1.jpg", "2025_10_2.jpg", "2025_11_1.jpg",
+      "2025_11_2.jpg"
     ];
 
     // 按时间排序
@@ -263,8 +276,8 @@ const TreeSystem: React.FC = () => {
     if (state === 'CHAOS' && pointer) {
       // 如果已经有选中的照片，检查是否需要关闭
       if (selectedPhotoUrl) {
-        // 检查锁定时间 (2秒)
-        if (Date.now() - photoOpenTimeRef.current < 2000) {
+        // 检查锁定时间 (增加到 3 秒)
+        if (Date.now() - photoOpenTimeRef.current < 3000) {
           return; // 锁定期间禁止关闭
         }
 
@@ -316,7 +329,7 @@ const TreeSystem: React.FC = () => {
       if (closestPhotoId) {
         // 如果点击的是当前照片，且过了锁定时间 -> 关闭
         if (selectedPhotoUrl === closestPhotoId) {
-          if (Date.now() - photoOpenTimeRef.current > 2000) {
+          if (Date.now() - photoOpenTimeRef.current > 3000) {
             setSelectedPhotoUrl(null);
           }
         } else {
@@ -326,7 +339,7 @@ const TreeSystem: React.FC = () => {
         }
       } else if (selectedPhotoUrl) {
         // Clicked on empty space -> Close photo (if not locked)
-        if (Date.now() - photoOpenTimeRef.current > 2000) {
+        if (Date.now() - photoOpenTimeRef.current > 3000) {
           setSelectedPhotoUrl(null);
         }
       }
@@ -341,12 +354,12 @@ const TreeSystem: React.FC = () => {
     treeRotation.current += (state === 'FORMED' ? (rotationSpeed + rotationBoost) : 0.05) * delta;
 
     // 应用平移 (带阻尼)
-    // 关键修复：当 FORMED 时，忽略 panOffset，强制目标为 (0,0)
-    const targetPanX = state === 'FORMED' ? 0 : panOffset.x;
-    const targetPanY = state === 'FORMED' ? 0 : panOffset.y;
+    // 允许在任何状态下平移，使用较快的跟随速度
+    const targetPanX = panOffset.x;
+    const targetPanY = panOffset.y;
 
-    currentPan.current.x = THREE.MathUtils.lerp(currentPan.current.x, targetPanX, 0.1);
-    currentPan.current.y = THREE.MathUtils.lerp(currentPan.current.y, targetPanY, 0.1);
+    currentPan.current.x = THREE.MathUtils.lerp(currentPan.current.x, targetPanX, 0.2);
+    currentPan.current.y = THREE.MathUtils.lerp(currentPan.current.y, targetPanY, 0.2);
 
     if (groupRef.current) {
       groupRef.current.position.x = currentPan.current.x;
@@ -422,6 +435,7 @@ const TreeSystem: React.FC = () => {
             scale={obj.scale}
             id={obj.id}
             shouldLoad={index < loadedCount}
+            year={obj.data.year}
           />
 
           {/* Year Label - Only show for the first photo of each year */}
