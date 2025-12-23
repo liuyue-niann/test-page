@@ -40,6 +40,14 @@ export interface TreeContextType {
   // 新增：缩放偏移量 (双手手势控制)
   zoomOffset: number;
   setZoomOffset: Dispatch<SetStateAction<number>>;
+
+  // 音乐播放状态
+  isMusicPlaying: boolean;
+  setIsMusicPlaying: Dispatch<SetStateAction<boolean>>;
+
+  // 音乐弹框显示状态
+  showMusicModal: boolean;
+  setShowMusicModal: Dispatch<SetStateAction<boolean>>;
 }
 
 export interface ParticleData {

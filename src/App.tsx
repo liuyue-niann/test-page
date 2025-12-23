@@ -5,6 +5,138 @@ import GestureInput from './components/GestureInput';
 import TechEffects from './components/TechEffects';
 import { AnimatePresence, motion } from 'framer-motion';
 
+// --- 音乐弹框组件 ---
+const MusicModal: React.FC = () => {
+    const { isMusicPlaying, setIsMusicPlaying, showMusicModal, setShowMusicModal } = useContext(TreeContext) as TreeContextType;
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+
+    const handlePlayMusic = () => {
+        if (!audioRef.current) {
+            audioRef.current = new Audio('/mp3/Bauklotze.mp3');
+            audioRef.current.loop = true;
+            audioRef.current.volume = 0.5;
+        }
+
+        audioRef.current.play().then(() => {
+            setIsMusicPlaying(true);
+            setShowMusicModal(false);
+        }).catch((error) => {
+            console.error('音频播放失败:', error);
+        });
+    };
+
+    const handlePlayWithoutMusic = () => {
+        setShowMusicModal(false);
+    };
+
+    if (!showMusicModal) return null;
+
+    return (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[150] bg-black/80 flex items-center justify-center backdrop-blur-sm"
+        >
+            <motion.div
+                initial={{ scale: 0.8, opacity: 0, rotate: -2 }}
+                animate={{ scale: 1, opacity: 1, rotate: 0 }}
+                exit={{ scale: 0.8, opacity: 0, rotate: 2 }}
+                transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                className="relative max-w-md w-full mx-4 p-8 bg-gradient-to-br from-red-900/90 to-green-900/90 backdrop-blur-xl rounded-3xl shadow-[0_0_60px_rgba(255,0,0,0.3)] border border-white/20 overflow-hidden"
+            >
+                {/* 装饰性光晕 */}
+                <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-red-500/10 via-transparent to-green-500/10 pointer-events-none"></div>
+                <div className="absolute -top-20 -right-20 w-40 h-40 bg-yellow-400/20 rounded-full blur-3xl pointer-events-none"></div>
+                <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-red-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+                {/* 内容 */}
+                <div className="relative z-10 text-center">
+                    {/* 图标 */}
+                    <motion.div
+                        animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }}
+                        transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                        className="text-7xl mb-6"
+                    >
+                        🎄
+                    </motion.div>
+
+                    {/* 标题 */}
+                    <h2 className="text-3xl font-bold mb-4 cinzel text-white drop-shadow-lg">
+                        christmas-trees-turbo版本
+                    </h2>
+
+                    {/* 描述 */}
+                    <p className="text-white/80 mb-8 text-sm leading-relaxed">
+                        开启音乐没有彩蛋
+                        因为需要3D渲染所以用到了GPU,如果电脑GPU不好会卡卡的（我电脑就是）,不好意思=￣ω￣=
+                    </p>
+
+                    {/* 按钮 */}
+                    <div className="flex flex-col gap-4">
+                        <motion.button
+                            onClick={handlePlayMusic}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            className="w-full py-4 px-6 bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-400 hover:to-yellow-500 text-white font-bold rounded-2xl shadow-lg shadow-yellow-500/30 transition-all duration-300 flex items-center justify-center gap-3"
+                        >
+                            <span className="text-2xl">🎵</span>
+                            <span>播放音乐</span>
+                        </motion.button>
+
+                    </div>
+                </div>
+
+                {/* 装饰性边框 */}
+                <div className="absolute top-4 left-4 text-2xl">❄️</div>
+                <div className="absolute top-4 right-4 text-2xl">⭐</div>
+                <div className="absolute bottom-4 left-4 text-2xl">✨</div>
+                <div className="absolute bottom-4 right-4 text-2xl">🎁</div>
+            </motion.div>
+        </motion.div>
+    );
+};
+
+// --- 音乐播放/静音切换按钮 ---
+const MuteButton: React.FC = () => {
+    const { isMusicPlaying, setIsMusicPlaying } = useContext(TreeContext) as TreeContextType;
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+
+    const handleToggle = () => {
+        if (!audioRef.current) {
+            audioRef.current = new Audio('/mp3/Bauklotze.mp3');
+            audioRef.current.loop = true;
+            audioRef.current.volume = 0.5;
+        }
+
+        if (isMusicPlaying) {
+            audioRef.current.pause();
+            setIsMusicPlaying(false);
+        } else {
+            audioRef.current.play().then(() => {
+                setIsMusicPlaying(true);
+            }).catch((error) => {
+                console.error('音频播放失败:', error);
+            });
+        }
+    };
+
+    return (
+        <motion.button
+            onClick={handleToggle}
+            className="pointer-events-auto fixed bottom-8 right-8 z-40 w-12 h-12 bg-gradient-to-r from-red-600/80 to-red-800/80 hover:from-red-500/90 hover:to-red-700/90 backdrop-blur-sm rounded-full shadow-[0_0_30px_rgba(255,0,0,0.4)] border border-white/20 transition-all duration-300 flex items-center justify-center group"
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+        >
+            <span className={`text-xl ${isMusicPlaying ? 'animate-pulse' : ''}`}>
+                {isMusicPlaying ? '🎵' : '🔇'}
+            </span>
+        </motion.button>
+    );
+};
+
 
 // --- 梦幻光标组件 ---
 const DreamyCursor: React.FC<{ pointer: PointerCoords | null, progress: number }> = ({ pointer, progress }) => {
@@ -120,16 +252,8 @@ const AppContent: React.FC = () => {
 
             {/* UI 层 (z-30) */}
             <div className="absolute inset-0 z-30 pointer-events-none flex flex-col justify-between p-8">
-                <header className="flex justify-between items-start">
-                    <div>
-                        <h1 className="text-4xl md:text-6xl font-bold cinzel text-transparent bg-clip-text bg-gradient-to-r from-red-300 via-green-200 to-amber-100 drop-shadow-[0_0_20px_rgba(255,255,255,0.5)]">
-                            🎄 CHRISTMAS MEMORIES ❄️
-                        </h1>
-                        <p className="text-red-400/80 cinzel tracking-widest text-sm mt-2">
-                            {state === 'CHAOS' ? '✨ SCATTERED MEMORIES // EXPLORE YOUR JOURNEY ✨' : '🎁 MEMORY TREE // TIMELINE OF LOVE 🎁'}
-                        </p>
-                    </div>
-                </header>
+                {/* 静音切换按钮 */}
+                <MuteButton />
             </div>
 
             {/* 光标层 (z-200) */}
@@ -138,6 +262,11 @@ const AppContent: React.FC = () => {
             {/* 弹窗层 (z-100) */}
             <AnimatePresence>
                 {selectedPhotoUrl && <PhotoModal url={selectedPhotoUrl} onClose={() => setSelectedPhotoUrl(null)} />}
+            </AnimatePresence>
+
+            {/* 音乐弹窗层 (z-150) */}
+            <AnimatePresence>
+                <MusicModal />
             </AnimatePresence>
         </main>
     );
@@ -154,6 +283,8 @@ const App: React.FC = () => {
     const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string | null>(null);
     const [panOffset, setPanOffset] = useState<{ x: number, y: number }>({ x: 0, y: 0 });
     const [zoomOffset, setZoomOffset] = useState<number>(0);
+    const [isMusicPlaying, setIsMusicPlaying] = useState<boolean>(false);
+    const [showMusicModal, setShowMusicModal] = useState<boolean>(true);
 
     return (
         <TreeContext.Provider value={{
@@ -166,7 +297,9 @@ const App: React.FC = () => {
             selectedPhotoUrl, setSelectedPhotoUrl,
             panOffset, setPanOffset,
             rotationBoost, setRotationBoost,
-            zoomOffset, setZoomOffset
+            zoomOffset, setZoomOffset,
+            isMusicPlaying, setIsMusicPlaying,
+            showMusicModal, setShowMusicModal
         }}>
             <AppContent />
         </TreeContext.Provider>

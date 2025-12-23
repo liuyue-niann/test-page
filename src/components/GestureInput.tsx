@@ -420,26 +420,25 @@ const GestureInput: React.FC = () => {
   };
 
   return (
-    // 全屏背景布局 - 最底层
+    // 全屏布局 - 但摄像头只在左上角显示
     <div className="fixed inset-0 w-full h-full z-0">
-      {/* 摄像头视频背景层 */}
+      {/* 黑色背景（替代原来的摄像头全屏背景） */}
+      <div className="absolute inset-0 bg-black z-[0]" />
+
+      {/* 摄像头视频 - 左上角小方块 - z-index更高才能显示 */}
       <video
         ref={videoRef}
-        className="absolute inset-0 w-full h-full object-cover z-0"
+        className="absolute top-4 left-4 w-48 h-36 object-cover rounded-lg border-2 border-emerald-500/50 z-[10] shadow-[0_0_20px_rgba(52,211,153,0.3)]"
         playsInline
         muted
         autoPlay
         style={{ transform: 'scaleX(-1)' }}
       />
 
-      {/* 半透明黑色遮罩 */}
-      <div className="absolute inset-0 bg-black/70 z-[1]" />
-
-      {/* 手势骨架线画布 */}
+      {/* 手势骨架线画布 - 隐藏（不再全屏显示骨架） */}
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 w-full h-full object-cover z-[2]"
-        style={{ transform: 'scaleX(-1)' }}
+        className="hidden z-[2]"
       />
 
       {loading && (
